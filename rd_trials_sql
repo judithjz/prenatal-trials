@@ -1,0 +1,9 @@
+SELECT 
+    countries.name AS country,
+    COUNT(studies.nct_id) AS active_trials
+FROM studies
+JOIN countries ON studies.nct_id = countries.nct_id
+WHERE studies.overall_status = 'RECRUITING' -- Uncomment if filtering active trials only
+GROUP BY country
+ORDER BY active_trials DESC
+LIMIT 15;

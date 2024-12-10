@@ -1,0 +1,14 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "aact-db.ctti-clinicaltrials.org",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "AACT",
+            "database": "aact",
+            "username": "lricher",
+            "password": "egr.pqy!TYK0qmv2dpt"
+        }
+    ]
+}
