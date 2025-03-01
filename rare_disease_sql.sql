@@ -12,4 +12,6 @@ SELECT id, nct_id, intervention_type, name, description
 
 SELECT id, nct_id, name, downcase_name
 	FROM ctgov.keywords;
-	
+
+SELECT id, nct_id, description
+	FROM ctgov.detailed_descriptions;
