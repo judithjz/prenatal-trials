@@ -15,3 +15,6 @@ SELECT id, nct_id, name, downcase_name
 
 SELECT id, nct_id, description
 	FROM ctgov.detailed_descriptions;
+
+SELECT id, nct_id, name, downcase_name
+	FROM ctgov.conditions;
