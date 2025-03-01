@@ -10,3 +10,6 @@ SELECT id, nct_id, status, name, city, state, zip, country, latitude, longitude
 SELECT id, nct_id, intervention_type, name, description
 	FROM ctgov.interventions;
 
+SELECT id, nct_id, name, downcase_name
+	FROM ctgov.keywords;
+	
