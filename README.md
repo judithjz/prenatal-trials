@@ -113,3 +113,8 @@ Contributions to this project are welcome! Please feel free to submit a pull req
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+![alt text](image.png)
+
+![Pediatric Trials in Canada](images/pediatric_trials_can.png)
+![Geographic Map of Pediatric Trials in Canada](images/pediatric_trials_geographic_map.png)
