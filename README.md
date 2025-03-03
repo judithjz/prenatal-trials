@@ -9,6 +9,10 @@ This Streamlit application visualizes pediatric clinical trials conducted in Can
 - **Geographic Map**: Maps showing the distribution of trials across Canadian cities
 - **Rare Disease Classification**: AI-powered classification of trials to identify those for rare diseases
 
+![Pediatric Trials in Canada](images/pediatric_trials_can.png)
+![Geographic Map of Pediatric Trials in Canada](images/pediatric_trials_geographic_map.png)
+
+
 ## Project Structure
 
 ```
@@ -113,8 +117,3 @@ Contributions to this project are welcome! Please feel free to submit a pull req
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-![alt text](image.png)
-
-![Pediatric Trials in Canada](images/pediatric_trials_can.png)
-![Geographic Map of Pediatric Trials in Canada](images/pediatric_trials_geographic_map.png)
