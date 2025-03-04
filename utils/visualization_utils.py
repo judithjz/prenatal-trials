@@ -1,15 +1,138 @@
 """
-Visualization utility functions for the Pediatric Clinical Trials app.
+Visualization utility functions for the Clinical Trials app.
 This module contains reusable visualization functions for creating charts and maps.
 """
 import unicodedata
 import re
 import pandas as pd
-from typing import Tuple, Optional, List, Dict
+from typing import Dict, List, Optional, Tuple, Union, Any
 import plotly.express as px
 import streamlit as st
 from pandas.api.types import CategoricalDtype
 
+# Population data for Canadian cities (based on recent census data)
+CITY_POPULATIONS = {
+    # Ontario
+    'toronto': 2731571,
+    'ottawa': 934243,
+    'mississauga': 721599,
+    'brampton': 593638,
+    'hamilton': 536917,
+    'london': 383822,
+    'markham': 328966,
+    'vaughan': 306233,
+    'kitchener': 233222,
+    'windsor': 217188,
+    'richmond hill': 195022,
+    'oakville': 193832,
+    'burlington': 183314,
+    'oshawa': 159458,
+    'barrie': 141434,
+    'st. catharines': 133113,
+    'guelph': 131794,
+    'cambridge': 129920,
+    'whitby': 128377,
+    'kingston': 117660,
+    'thunder bay': 108843,
+    'waterloo': 104986,
+    'milton': 110128,
+    'ajax': 119677,
+    'newmarket': 84224,
+    'peterborough': 81032,
+    'sarnia': 71594,
+    'north bay': 51553,
+    'orillia': 31166,
+    'cobourg': 19440,
+    'caledon': 76581,
+    'brantford': 134203,
+    'east york': 118071,  # Part of Toronto
+    'north york': 691600,  # Part of Toronto
+    'scarborough': 632098,  # Part of Toronto
+    'etobicoke': 365143,  # Part of Toronto
+    'thornhill': 112719,  # Part of Vaughan/Markham
+    'woodbridge': 105228,  # Part of Vaughan
+    
+    # Quebec
+    'montreal': 1704694,
+    'quebec city': 531902,
+    'quebec': 531902,  # Same as quebec city
+    'laval': 422993,
+    'gatineau': 276245,
+    'longueuil': 239700,
+    'sherbrooke': 161323,
+    'saguenay': 144230,
+    'trois-rivières': 134413,
+    'chicoutimi': 66547,  # Part of Saguenay
+    'rimouski': 47006,
+    'st-jérôme': 77301,
+    'ste-foy': 98659,  # Part of Quebec City
+    'saint-jean-sur-richelieu': 92394,
+    'baie-saint-paul': 7146,
+    'pointe-claire': 31380,
+    'saint-eustache': 43784,
+    'la malbaie': 8271,
+    
+    # British Columbia
+    'vancouver': 2643000, # Changed from 631486 to population of Greater Vancouver Area (TODO: will need to remove other cities)
+    'surrey': 518467,
+    'burnaby': 232755,
+    'richmond': 198309,
+    'abbotsford': 141397,
+    'coquitlam': 139284,
+    'kelowna': 142146,
+    'victoria': 85792,
+    'nanaimo': 90504,
+    'kamloops': 90280,
+    'chilliwack': 83788,
+    'new westminster': 70996,
+    'west vancouver': 42473,
+    'penticton': 33761,
+    'whistler': 11854,
+    'cranbrook': 20499,
+    'fort st. james': 1598,
+    'grand forks': 4049,
+    'canal flats': 668,
+    'chetwynd': 2503,
+    'lytton': 249,
+    
+    # Alberta
+    'calgary': 1239220,
+    'edmonton': 932546,
+    'red deer': 100418,
+    'lethbridge': 92729,
+    'st. albert': 65589,
+    'medicine hat': 63271,
+    'grande prairie': 63166,
+    'sherwood park': 70618,  # Part of Strathcona County
+    'canmore': 13992,
+    'banff': 7847,
+    'camrose': 18742,
+    
+    # Manitoba
+    'winnipeg': 705244,
+    
+    # Saskatchewan
+    'saskatoon': 273010,
+    'regina': 228928,
+    
+    # Nova Scotia
+    'halifax': 403131,
+    
+    # New Brunswick
+    'saint john': 67575,
+    'st. john': 67575,  # Same as saint john
+    'moncton': 71889,
+    'fredericton': 58220,
+    
+    # Newfoundland and Labrador
+    "st. john's": 108860,
+    
+    # Special cases
+    'windermere': 2800,  # Part of Vaughan
+    'winchester': 2394,
+    'alliston': 19243,  # Part of New Tecumseth
+    'coburg': 19440,  # Same as Cobourg
+}
 
 # Global dictionary for common misspellings and aliases
 SPELLING_CORRECTIONS = {
@@ -185,12 +308,126 @@ CITY_COORDS = {
     'coburg': {'lat': 43.9593, 'lon': -78.1677},
 }
 
-def normalize_city_name(city_name: str) -> str:
+# Define metro area groupings
+METRO_VANCOUVER_CITIES = {
+    'vancouver',
+    'burnaby',
+    'coquitlam',
+    'delta',
+    'langley',  # Covers both City and District
+    'langley city',
+    'langley district',
+    'maple ridge',
+    'new westminster',
+    'north vancouver',  # Covers both City and District
+    'north vancouver city',
+    'north vancouver district',
+    'pitt meadows',
+    'port coquitlam',
+    'port moody',
+    'richmond',
+    'surrey',
+    'white rock',
+    'west vancouver',
+    'bowen island',
+    'anmore',
+    'belcarra',
+    # Add common spelling variations
+    'west van',
+    'north van',
+    'poco',  # Common abbreviation for Port Coquitlam
+    'new west',  # Common abbreviation for New Westminster
+}
+
+GREATER_TORONTO_AREA_CITIES = {
+    # Toronto (Core)
+    'toronto',
+    'north york',
+    'scarborough',
+    'etobicoke',
+    'east york',
+    'york',
+    
+    # Peel Region
+    'mississauga',
+    'brampton',
+    'caledon',
+    
+    # York Region
+    'vaughan',
+    'markham',
+    'richmond hill',
+    'aurora',
+    'newmarket',
+    'king',
+    'whitchurch-stouffville',
+    'stouffville',
+    'east gwillimbury',
+    'georgina',
+    
+    # Durham Region
+    'pickering',
+    'ajax',
+    'whitby',
+    'oshawa',
+    'clarington',
+    'uxbridge',
+    'scugog',
+    'port perry',
+    'brock',
+    'beaverton',
+    'cannington',
+    'sunderland',
+    
+    # Halton Region
+    'oakville',
+    'burlington',
+    'milton',
+    'halton hills',
+    'georgetown',
+    'acton',
+    
+    # Common variations and abbreviations
+    'gta',
+    'the 6',
+    'the six',
+    'tdot',
+    'the dot',
+    't.o.',
+    'to',
+}
+
+def metropolitan_area_mapping(city_name: str) -> str:
+    """
+    Map a normalized city name to its metropolitan area if applicable.
+    
+    Args:
+        city_name: Normalized city name
+        
+    Returns:
+        Metropolitan area name or original city name if not in a defined metro area
+    """
+    if city_name in METRO_VANCOUVER_CITIES:
+        return 'metro vancouver'
+    elif city_name in GREATER_TORONTO_AREA_CITIES:
+        return 'greater toronto area'
+    else:
+        return city_name
+
+
+def normalize_city_name(city_name: str, apply_metro_mapping: bool = True) -> str:
     """
     Normalize a city name by lower-casing, removing accents and punctuation,
     and then applying spelling corrections. Also, remove trailing 's' from
     names like 'johns' so that variants such as "saint john's" and "st john's"
-    become a common form.
+    become a common form. Optionally map to metropolitan area.
+    
+    Args:
+        city_name: City name to normalize
+        apply_metro_mapping: Whether to apply metropolitan area mapping (default: True)
+        
+    Returns:
+        Normalized city name or metropolitan area name
     """
     if not city_name:
         return ""
@@ -207,34 +444,35 @@ def normalize_city_name(city_name: str) -> str:
     city = re.sub(r'\s+', ' ', city).strip()
     
     # Apply spelling corrections based on normalized (punctuation-free) key.
-    # For example, ensure that both "saint johns" and "st johns" are mapped
-    # to a common form.
     if city in SPELLING_CORRECTIONS:
         correction = SPELLING_CORRECTIONS[city]
         if correction:
             city = correction
     
     # Optionally, remove a trailing 's' from names like 'johns' if that seems appropriate.
-    # For example, turn "saint johns" or "st johns" into "st john".
-    # (You can adjust the regex if you have other specific rules.)
     city = re.sub(r'(?<=\bjohn)s\b', '', city).strip()
     
     # If the city name starts with common prefixes like "st", "st.", or "saint",
     # check if the corresponding name exists in the city coordinates.
-    # (Assumes CITY_COORDS contains the preferred normalized version.)
     for prefix in ['saint', 'st', 'st']:
         if city.startswith(prefix + ' '):
             base = city.split(' ', 1)[1]
             if f"saint {base}" in CITY_COORDS:
-                return f"saint {base}"
+                city = f"saint {base}"
             if f"st {base}" in CITY_COORDS:
-                return f"st {base}"
+                city = f"st {base}"
+    
+    # Apply metropolitan area mapping if requested
+    if apply_metro_mapping:
+        return metropolitan_area_mapping(city)
+    
     return city
 
 
 def plot_geographic_map(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatter_mapbox], List[str]]:
     """
     Create a map visualization showing the distribution of trials across Canada.
+    Cities within the Greater Vancouver Area and Greater Toronto Area are consolidated.
     
     Args:
         facilities_df: DataFrame containing facility information with a 'city' column 
@@ -250,15 +488,20 @@ def plot_geographic_map(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatte
     # Build a mapping of normalized city names to coordinates using the global CITY_COORDS
     normalized_city_coords = {}
     for city_name, coords in CITY_COORDS.items():
-        norm_name = normalize_city_name(city_name)
+        # Use normalize_city_name with apply_metro_mapping=False to get the original normalized name
+        norm_name = normalize_city_name(city_name, apply_metro_mapping=False)
         if norm_name:
             normalized_city_coords[norm_name] = coords
-
-    # Add a normalized city column to the facilities data
-    facilities_df = facilities_df.copy()
-    facilities_df['norm_city'] = facilities_df['city'].apply(lambda x: normalize_city_name(x))
     
-    # Aggregate counts by normalized city name
+    # Add metro area coordinates (using central city coordinates)
+    normalized_city_coords['metro vancouver'] = CITY_COORDS['vancouver']
+    normalized_city_coords['greater toronto area'] = CITY_COORDS['toronto']
+
+    # Add a normalized city column to the facilities data, applying metro area mapping
+    facilities_df = facilities_df.copy()
+    facilities_df['norm_city'] = facilities_df['city'].apply(lambda x: normalize_city_name(x, apply_metro_mapping=True))
+    
+    # Aggregate counts by normalized city name (now including metro areas)
     city_counts = facilities_df.groupby('norm_city')['nct_id'].nunique().reset_index()
     city_counts.columns = ['norm_city', 'trial_count']
     city_counts = city_counts.sort_values('trial_count', ascending=False)
@@ -274,6 +517,13 @@ def plot_geographic_map(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatte
             if variant in norm_city or norm_city in variant:
                 if corrected and corrected in CITY_COORDS:
                     return CITY_COORDS[corrected], True
+        
+        # Special handling for metro areas
+        if norm_city == 'metro vancouver':
+            return CITY_COORDS['vancouver'], True
+        elif norm_city == 'greater toronto area':
+            return CITY_COORDS['toronto'], True
+            
         cities_without_coords.append(norm_city)
         # Default coordinate: center of Canada
         return {'lat': 56.130366, 'lon': -106.346771}, False
@@ -292,6 +542,11 @@ def plot_geographic_map(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatte
     map_df = pd.DataFrame(cities_with_coords)
     map_df_for_viz = map_df[map_df['found']].copy()
     
+    # For display purposes, capitalize city names (including metro areas)
+    map_df_for_viz['city'] = map_df_for_viz['city'].apply(
+        lambda x: ' '.join(word.capitalize() for word in x.split())
+    )
+    
     fig_map = px.scatter_mapbox(
         map_df_for_viz,
         lat="lat", 
@@ -301,7 +556,7 @@ def plot_geographic_map(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatte
         color_continuous_scale="Viridis",
         hover_name="city",
         hover_data={"lat": False, "lon": False, "trial_count": True},
-        title="Canadian Cities with Pediatric Clinical Trials",
+        title="Canadian Cities with Clinical Trials (Metro Areas Consolidated)",
         size_max=35,
         zoom=3,
     )
@@ -312,9 +567,11 @@ def plot_geographic_map(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatte
     
     return fig_map, sorted(list(set(cities_without_coords)))
 
+
 def render_city_visualization(filtered_df: pd.DataFrame, conn: any, facilities_df: Optional[pd.DataFrame] = None):
     """
     Render the city visualization section with a map and a bar chart.
+    Cities within the Greater Vancouver Area and Greater Toronto Area are consolidated.
     
     Args:
         filtered_df: DataFrame with filtered trial data.
@@ -333,32 +590,59 @@ def render_city_visualization(filtered_df: pd.DataFrame, conn: any, facilities_d
         st.warning("No trials match the current filters.")
         return
         
-    # FIX: Always fetch fresh facility data for the FILTERED trials 
-    # instead of using the pre-fetched facilities_df which might contain ALL trials
+    # Always fetch fresh facility data for the FILTERED trials 
     with st.spinner("Loading geographic data..."):
         filtered_facilities_df = fetch_facilities_for_trials(conn, filtered_nct_ids)
     
     if filtered_facilities_df is not None and not filtered_facilities_df.empty:
-        # Create map visualization using normalized city names
+        # Create map visualization using normalized city names (with metro area mapping)
         fig_map, missing_cities = plot_geographic_map(filtered_facilities_df)
         
         if fig_map:
             st.plotly_chart(fig_map, use_container_width=True)
-            st.info("Cities without precise coordinates are excluded from the map. The size of each point represents the number of trials in that city.")
+            st.info("Cities within the Greater Toronto Area and Metro Vancouver have been consolidated. The size of each point represents the number of trials in that city or metropolitan area.")
             
-            # For the bar chart, aggregate trials by normalized city names
+            # For the bar chart, aggregate trials by normalized city names (with metro area mapping)
             filtered_facilities_df = filtered_facilities_df.copy()
-            filtered_facilities_df['norm_city'] = filtered_facilities_df['city'].apply(lambda x: normalize_city_name(x))
+            filtered_facilities_df['norm_city'] = filtered_facilities_df['city'].apply(
+                lambda x: normalize_city_name(x, apply_metro_mapping=True)
+            )
             
-            # FIX: Debug information to verify counts
-            with st.expander("Debug Information"):
+            # Optional debug information
+            with st.expander("Debug Information", expanded=False):
                 total_unique_trials = filtered_facilities_df['nct_id'].nunique()
                 st.write(f"Total unique trials in filtered set: {total_unique_trials}")
                 
-                # Get count for Edmonton specifically
-                edmonton_mask = filtered_facilities_df['norm_city'] == 'edmonton'
-                edmonton_trial_count = filtered_facilities_df[edmonton_mask]['nct_id'].nunique()
-                st.write(f"Edmonton unique trial count: {edmonton_trial_count}")
+                # Get count for Metro Vancouver and GTA
+                metro_van_mask = filtered_facilities_df['norm_city'] == 'metro vancouver'
+                metro_van_trial_count = filtered_facilities_df[metro_van_mask]['nct_id'].nunique()
+                st.write(f"Metro Vancouver unique trial count: {metro_van_trial_count}")
+                
+                gta_mask = filtered_facilities_df['norm_city'] == 'greater toronto area'
+                gta_trial_count = filtered_facilities_df[gta_mask]['nct_id'].nunique()
+                st.write(f"Greater Toronto Area unique trial count: {gta_trial_count}")
+                
+                # Count original cities that were mapped to metro areas
+                original_cities = filtered_facilities_df.copy()
+                original_cities['unmapped_city'] = filtered_facilities_df['city'].apply(
+                    lambda x: normalize_city_name(x, apply_metro_mapping=False)
+                )
+                
+                # List cities that were mapped to Metro Vancouver
+                metro_van_cities = original_cities[
+                    original_cities['unmapped_city'].isin(METRO_VANCOUVER_CITIES)
+                ]['unmapped_city'].unique()
+                
+                st.write(f"Cities mapped to Metro Vancouver ({len(metro_van_cities)}):")
+                st.write(", ".join(sorted(metro_van_cities)))
+                
+                # List cities that were mapped to GTA  
+                gta_cities = original_cities[
+                    original_cities['unmapped_city'].isin(GREATER_TORONTO_AREA_CITIES)
+                ]['unmapped_city'].unique()
+                
+                st.write(f"Cities mapped to Greater Toronto Area ({len(gta_cities)}):")
+                st.write(", ".join(sorted(gta_cities)))
                 
                 # Show sample of the data
                 st.write("Sample of filtered facilities data:")
@@ -369,16 +653,21 @@ def render_city_visualization(filtered_df: pd.DataFrame, conn: any, facilities_d
             city_counts.columns = ['city', 'trial_count']
             city_counts = city_counts.sort_values('trial_count', ascending=True)
             
+            # Capitalize city names for display
+            city_counts['city_display'] = city_counts['city'].apply(
+                lambda x: ' '.join(word.capitalize() for word in x.split())
+            )
+            
             top_n = min(10, len(city_counts))
             top_cities = city_counts.tail(top_n)
             
             fig_cities = px.bar(
                 top_cities,
-                y='city',
+                y='city_display',
                 x='trial_count',
                 orientation='h',
-                title=f'Top {top_n} Canadian Cities by Number of Pediatric Clinical Trials',
-                labels={'city': 'City', 'trial_count': 'Number of Trials'},
+                title=f'Top {top_n} Canadian Cities/Metro Areas by Number of Clinical Trials',
+                labels={'city_display': 'City/Metro Area', 'trial_count': 'Number of Trials'},
                 color='trial_count',
                 color_continuous_scale='Viridis',
             )
@@ -386,7 +675,7 @@ def render_city_visualization(filtered_df: pd.DataFrame, conn: any, facilities_d
             fig_cities.update_layout(
                 height=max(400, top_n * 25),
                 xaxis_title="Number of Trials",
-                yaxis_title="City",
+                yaxis_title="City/Metro Area",
                 yaxis={'categoryorder':'total ascending'},
                 template="plotly_white"
             )
@@ -407,222 +696,359 @@ def render_city_visualization(filtered_df: pd.DataFrame, conn: any, facilities_d
     else:
         st.warning("No geographic data available for the selected trials.")
 
-def plot_geographic_map_alberta(facilities_df: pd.DataFrame) -> Tuple[Optional[px.scatter_mapbox], List[str]]:
+
+def plot_normalized_geographic_map(facilities_df: pd.DataFrame, min_population: int = 400000) -> Tuple[Optional[px.scatter_mapbox], List[str]]:
     """
-    Create a map visualization showing the distribution of trials 
-    across Alberta (filtered by known Alberta city names).
+    Create a map visualization showing the distribution of trials across Canada,
+    normalized by city population (trials per 100,000 residents).
+    Only includes cities with a population greater than or equal to the min_population threshold.
+    Cities within the Greater Vancouver Area and Greater Toronto Area are consolidated.
     
     Args:
-        facilities_df: DataFrame with 'city' and 'nct_id' columns.
+        facilities_df: DataFrame containing facility information with a 'city' column 
+                      and 'nct_id' for trial IDs.
+        min_population: Minimum population threshold for including cities (default: 400000)
         
     Returns:
-        Tuple of (plotly scatter_mapbox figure, list of missing city coords).
+        Tuple of (plotly scatter_mapbox figure, list of normalized cities missing coordinates or population data)
     """
     # Validate required columns
     if facilities_df.empty or 'city' not in facilities_df.columns or 'nct_id' not in facilities_df.columns:
         return None, []
     
-    # A set (or list) of normalized city names in Alberta
-    # Make sure these match the normalized keys you have in CITY_COORDS.
-    alberta_cities = {
-        "calgary",
-        "edmonton",
-        "red deer",
-        "lethbridge",
-        "canmore",
-        "st. albert",
-        "grande prairie",
-        "banff",
-        "camrose",
-        "medicine hat",
-    }
-    
-    # Build a mapping of normalized city names to coordinates
+    # Build a mapping of normalized city names to coordinates using the global CITY_COORDS
     normalized_city_coords = {}
     for city_name, coords in CITY_COORDS.items():
-        norm_name = normalize_city_name(city_name)
+        # Use normalize_city_name with apply_metro_mapping=False to get the original normalized name
+        norm_name = normalize_city_name(city_name, apply_metro_mapping=False)
         if norm_name:
             normalized_city_coords[norm_name] = coords
 
-    # Copy DataFrame to avoid mutating original
+    # Add metro area coordinates (using central city coordinates)
+    normalized_city_coords['metro vancouver'] = CITY_COORDS['vancouver']
+    normalized_city_coords['greater toronto area'] = CITY_COORDS['toronto']
+
+    # Add a normalized city column to the facilities data, applying metro area mapping
     facilities_df = facilities_df.copy()
-    # Normalize city names
-    facilities_df['norm_city'] = facilities_df['city'].apply(lambda x: normalize_city_name(x))
-
-    # **Filter** for only Alberta cities
-    alberta_df = facilities_df[facilities_df['norm_city'].isin(alberta_cities)]
-    if alberta_df.empty:
-        return None, []
-
-    # Count how many trials per city
-    city_counts = alberta_df.groupby('norm_city')['nct_id'].nunique().reset_index()
-    city_counts.columns = ['norm_city', 'trial_count']
-    city_counts = city_counts.sort_values('trial_count', ascending=False)
+    facilities_df['norm_city'] = facilities_df['city'].apply(lambda x: normalize_city_name(x, apply_metro_mapping=True))
     
-    # Prepare to track missing coords
-    missing_cities = []
-    cities_with_coords = []
+    # Aggregate counts by normalized city name (now including metro areas)
+    city_counts = facilities_df.groupby('norm_city')['nct_id'].nunique().reset_index()
+    city_counts.columns = ['norm_city', 'trial_count']
+    
+    # Add population data
+    # For metro areas, we need to define population manually
+    # These are approximate population values for the metro areas
+    METRO_POPULATIONS = {
+        'metro vancouver': 2463431,  # Metro Vancouver population
+        'greater toronto area': 6417516,  # GTA population
+    }
+    
+    # Add city populations, prioritizing metro area populations for consolidated areas
+    city_counts['population'] = city_counts['norm_city'].apply(
+        lambda x: METRO_POPULATIONS.get(x, CITY_POPULATIONS.get(x, None))
+    )
+    
+    # Filter out cities without population data and apply minimum population threshold
+    city_counts_with_pop = city_counts[
+        (city_counts['population'].notna()) & 
+        (city_counts['population'] >= min_population)
+    ].copy()
+    
+    # Calculate trials per 100,000 residents
+    city_counts_with_pop['trials_per_100k'] = (
+        city_counts_with_pop['trial_count'] / city_counts_with_pop['population'] * 100000
+    ).round(2)
+    
+    # Sort by normalized count
+    city_counts_with_pop = city_counts_with_pop.sort_values('trials_per_100k', ascending=False)
+    
+    # Create the map visualization
+    cities_without_coords_or_pop = []
+    cities_with_coords_and_pop = []
     
     def get_coords(norm_city: str) -> Tuple[Dict[str, float], bool]:
         if norm_city in normalized_city_coords:
             return normalized_city_coords[norm_city], True
-        # If we have a partial match in SPELLING_CORRECTIONS, try that
+        # Try checking against the spelling corrections (if part of the key)
         for variant, corrected in SPELLING_CORRECTIONS.items():
             if variant in norm_city or norm_city in variant:
                 if corrected and corrected in CITY_COORDS:
                     return CITY_COORDS[corrected], True
-        # Otherwise, record as missing
-        missing_cities.append(norm_city)
-        # Default to center of Canada (or pick a center of Alberta if you prefer)
+                    
+        # Special handling for metro areas
+        if norm_city == 'metro vancouver':
+            return CITY_COORDS['vancouver'], True
+        elif norm_city == 'greater toronto area':
+            return CITY_COORDS['toronto'], True
+            
+        cities_without_coords_or_pop.append(norm_city)
+        # Default coordinate: center of Canada
         return {'lat': 56.130366, 'lon': -106.346771}, False
     
-    # Collect city coords
-    for _, row in city_counts.iterrows():
+    for _, row in city_counts_with_pop.iterrows():
         norm_city = row['norm_city']
         coords, found = get_coords(norm_city)
-        cities_with_coords.append({
+        cities_with_coords_and_pop.append({
             'city': norm_city,
             'trial_count': row['trial_count'],
+            'population': row['population'],
+            'trials_per_100k': row['trials_per_100k'],
             'lat': coords['lat'],
             'lon': coords['lon'],
             'found': found
         })
-
-    # Build a DataFrame of the Alberta cities with coords
-    map_df = pd.DataFrame(cities_with_coords)
+    
+    # Get cities with population data >= min_population but missing from city_counts_with_pop
+    cities_with_pop_no_trials = []
+    
+    # First check standard cities
+    for city in CITY_POPULATIONS.keys():
+        if city not in city_counts_with_pop['norm_city'].values and CITY_POPULATIONS.get(city, 0) >= min_population:
+            cities_with_pop_no_trials.append(city)
+    
+    # Then check metro areas
+    for metro, pop in METRO_POPULATIONS.items():
+        if metro not in city_counts_with_pop['norm_city'].values and pop >= min_population:
+            cities_with_pop_no_trials.append(metro)
+    
+    for city in cities_with_pop_no_trials:
+        if city in normalized_city_coords:
+            coords = normalized_city_coords[city]
+            cities_with_coords_and_pop.append({
+                'city': city,
+                'trial_count': 0,
+                'population': METRO_POPULATIONS.get(city, CITY_POPULATIONS.get(city)),
+                'trials_per_100k': 0,
+                'lat': coords['lat'],
+                'lon': coords['lon'],
+                'found': True
+            })
+    
+    map_df = pd.DataFrame(cities_with_coords_and_pop)
     map_df_for_viz = map_df[map_df['found']].copy()
     
-    # Create the Plotly scatter_mapbox
-    # Center near the middle of Alberta, with a higher zoom for a closer view.
+    # For display purposes, capitalize city names (including metro areas)
+    map_df_for_viz['city_display'] = map_df_for_viz['city'].apply(
+        lambda x: ' '.join(word.capitalize() for word in x.split())
+    )
+    
+    # Create the map
     fig_map = px.scatter_mapbox(
         map_df_for_viz,
         lat="lat", 
         lon="lon",
-        size="trial_count",
-        color="trial_count",
+        size="trials_per_100k",
+        color="trials_per_100k",
         color_continuous_scale="Viridis",
-        hover_name="city",
-        hover_data={"lat": False, "lon": False, "trial_count": True},
-        title="Alberta Cities with Pediatric Clinical Trials",
+        hover_name="city_display",
+        hover_data={
+            "lat": False, 
+            "lon": False, 
+            "trials_per_100k": True, 
+            "trial_count": True,
+            "population": True,
+            "city": False
+        },
+        title=f"Canadian Cities/Metro Areas (Pop. ≥ {min_population/1000:.0f}k): Clinical Trials per 100,000 Residents",
         size_max=35,
-        zoom=5,  # Tighter zoom for Alberta
+        zoom=3,
     )
     fig_map.update_layout(
         height=600,
         mapbox_style="carto-positron",
-        mapbox_center={"lat": 53.9333, "lon": -116.5765},  # Rough center of Alberta
     )
     
-    return fig_map, sorted(list(set(missing_cities)))
+    # Add cities without population data to the missing list
+    cities_without_pop = city_counts[city_counts['population'].isna()]['norm_city'].tolist()
+    for city in cities_without_pop:
+        if city not in cities_without_coords_or_pop:
+            cities_without_coords_or_pop.append(city)
+    
+    # Add cities below the population threshold to the missing list
+    cities_below_threshold = city_counts[
+        (city_counts['population'].notna()) & 
+        (city_counts['population'] < min_population)
+    ]['norm_city'].tolist()
+    
+    return fig_map, sorted(list(set(cities_without_coords_or_pop + cities_below_threshold)))
 
-def render_city_visualization_alberta(filtered_df: pd.DataFrame, conn: any, facilities_df: Optional[pd.DataFrame] = None):
+
+def render_city_visualization_normalized(filtered_df: pd.DataFrame, conn: any, facilities_df: Optional[pd.DataFrame] = None, min_population: int = 400000):
     """
-    Render the Alberta-specific city visualization with a map and bar chart.
+    Render the city visualization section with a map and a bar chart,
+    with trial counts normalized by city population.
+    Only includes cities with a population greater than or equal to the min_population threshold.
+    Cities within the Greater Vancouver Area and Greater Toronto Area are consolidated.
     
     Args:
         filtered_df: DataFrame with filtered trial data.
         conn: Database connection for fetching additional data if needed.
         facilities_df: Optional pre-fetched facilities data.
+        min_population: Minimum population threshold for including cities (default: 400000)
     """
     # Import the database utility function to avoid circular imports
     from utils.database_utils import fetch_facilities_for_trials
     
-    st.subheader("Alberta Geographic Distribution")
+    st.subheader(f"Population-Normalized Geographic Distribution (Pop. ≥ {min_population/1000:.0f}k)")
     
     # Get the list of filtered trial IDs
     filtered_nct_ids = filtered_df['nct_id'].tolist()
     
-    if not filtered_nct_ids:
-        st.warning("No trials match the current filters.")
-        return
+    # Fetch facilities data if not provided or empty
+    if facilities_df is None or facilities_df.empty:
+        with st.spinner("Loading geographic data..."):
+            facilities_df = fetch_facilities_for_trials(conn, filtered_nct_ids)
     
-    # FIX: Always fetch fresh facility data for the FILTERED trials
-    with st.spinner("Loading geographic data for Alberta..."):
-        filtered_facilities_df = fetch_facilities_for_trials(conn, filtered_nct_ids)
-    
-    if filtered_facilities_df is not None and not filtered_facilities_df.empty:
-        # Define Alberta cities for filtering
-        alberta_cities = {
-            "calgary",
-            "edmonton",
-            "red deer",
-            "lethbridge",
-            "canmore",
-            "st. albert",
-            "grande prairie", 
-            "banff",
-            "camrose",
-            "medicine hat",
+    if facilities_df is not None and not facilities_df.empty:
+        # Metro area populations
+        METRO_POPULATIONS = {
+            'metro vancouver': 2463431,  # Metro Vancouver population
+            'greater toronto area': 6417516,  # GTA population
         }
         
-        # Add normalized city names
-        filtered_facilities_df = filtered_facilities_df.copy()
-        filtered_facilities_df['norm_city'] = filtered_facilities_df['city'].apply(lambda x: normalize_city_name(x))
+        # Create population-normalized map visualization with population threshold
+        fig_map, missing_cities = plot_normalized_geographic_map(facilities_df, min_population)
         
-        # Filter for Alberta cities
-        alberta_facilities = filtered_facilities_df[filtered_facilities_df['norm_city'].isin(alberta_cities)]
-        
-        if alberta_facilities.empty:
-            st.warning("No Alberta city data found for these trials.")
-        else:
-            # Create the Alberta-specific map
-            fig_map_ab, missing_cities_ab = plot_geographic_map_alberta(filtered_facilities_df)
+        if fig_map:
+            st.plotly_chart(fig_map, use_container_width=True)
+            st.info(f"This map shows trials per 100,000 residents for cities/metropolitan areas with population ≥ {min_population/1000:.0f}k. Cities within the Greater Toronto Area and Metro Vancouver have been consolidated.")
             
-            if fig_map_ab:
-                st.plotly_chart(fig_map_ab, use_container_width=True)
-                st.info("Cities without precise coordinates are excluded from the Alberta map. The size of each point represents the number of trials in that city.")
-                
-                # Create bar chart for Alberta cities
-                city_counts = alberta_facilities.groupby('norm_city')['nct_id'].nunique().reset_index()
-                city_counts.columns = ['city', 'trial_count']
-                city_counts = city_counts.sort_values('trial_count', ascending=True)
-                
-                # FIX: Debug information to verify counts
-                with st.expander("Debug Information"):
-                    total_unique_trials = alberta_facilities['nct_id'].nunique()
-                    st.write(f"Total unique trials in Alberta: {total_unique_trials}")
-                    
-                    # Show count for each Alberta city
-                    for city in alberta_cities:
-                        city_mask = alberta_facilities['norm_city'] == city
-                        city_trial_count = alberta_facilities[city_mask]['nct_id'].nunique()
-                        if city_trial_count > 0:
-                            st.write(f"{city.title()} unique trial count: {city_trial_count}")
-                    
-                    # Show sample of the data
-                    st.write("Sample of Alberta facilities data:")
-                    st.dataframe(alberta_facilities.head(10))
+            # For the bar chart, aggregate trials by normalized city names with population data
+            facilities_df = facilities_df.copy()
+            facilities_df['norm_city'] = facilities_df['city'].apply(
+                lambda x: normalize_city_name(x, apply_metro_mapping=True)
+            )
+            
+            city_counts = facilities_df.groupby('norm_city')['nct_id'].nunique().reset_index()
+            city_counts.columns = ['city', 'trial_count']
+            
+            # Add population data for cities and metro areas
+            city_counts['population'] = city_counts['city'].apply(
+                lambda x: METRO_POPULATIONS.get(x, CITY_POPULATIONS.get(x, None))
+            )
+            
+            # Filter cities with population data above the threshold and calculate trials per 100k
+            city_counts_with_pop = city_counts[
+                (city_counts['population'].notna()) & 
+                (city_counts['population'] >= min_population)
+            ].copy()
+            
+            city_counts_with_pop['trials_per_100k'] = (
+                city_counts_with_pop['trial_count'] / city_counts_with_pop['population'] * 100000
+            ).round(2)
+            
+            # Sort by trials per 100k for bar chart
+            city_counts_with_pop = city_counts_with_pop.sort_values('trials_per_100k', ascending=True)
+            
+            # Create display names with proper capitalization
+            city_counts_with_pop['city_display'] = city_counts_with_pop['city'].apply(
+                lambda x: ' '.join(word.capitalize() for word in x.split())
+            )
+            
+            if not city_counts_with_pop.empty:
+                top_n = len(city_counts_with_pop)  # Show all cities that meet the threshold
                 
                 fig_cities = px.bar(
-                    city_counts,
-                    y='city',
-                    x='trial_count',
+                    city_counts_with_pop,
+                    y='city_display',
+                    x='trials_per_100k',
                     orientation='h',
-                    title='Alberta Cities by Number of Pediatric Clinical Trials',
-                    labels={'city': 'City', 'trial_count': 'Number of Trials'},
-                    color='trial_count',
+                    title=f'Major Canadian Cities/Metro Areas (Pop. ≥ {min_population/1000:.0f}k) by Clinical Trials per 100,000 Residents',
+                    labels={'city_display': 'City/Metro Area', 'trials_per_100k': 'Trials per 100,000 Residents'},
+                    color='trials_per_100k',
                     color_continuous_scale='Viridis',
+                    text='trial_count'
                 )
                 
                 fig_cities.update_layout(
-                    height=max(350, len(city_counts) * 40),
-                    xaxis_title="Number of Trials",
-                    yaxis_title="City",
+                    height=max(400, top_n * 30),
+                    xaxis_title="Trials per 100,000 Residents",
+                    yaxis_title="City/Metro Area",
                     yaxis={'categoryorder':'total ascending'},
                     template="plotly_white"
                 )
                 
+                fig_cities.update_traces(
+                    texttemplate='%{text} trials',
+                    textposition='outside'
+                )
+                
                 st.plotly_chart(fig_cities, use_container_width=True)
                 
-                # If there are missing cities, display them in an expander
-                if missing_cities_ab:
-                    with st.expander(f"Cities Without Coordinates in Alberta ({len(missing_cities_ab)})", expanded=False):
-                        for city in missing_cities_ab:
-                            st.write(f"• {city}")
+                # Generate a table with full data
+                st.subheader(f"Population-Normalized Trial Data by Major City/Metro Area (Pop. ≥ {min_population/1000:.0f}k)")
+                table_data = city_counts_with_pop.sort_values('trials_per_100k', ascending=False)
+                table_data = table_data[['city_display', 'trial_count', 'population', 'trials_per_100k']]
+                table_data.columns = ['City/Metro Area', 'Number of Trials', 'Population', 'Trials per 100,000 Residents']
+                st.dataframe(table_data, use_container_width=True)
             else:
-                st.warning("Unable to create Alberta map visualization.")
-    else:
-        st.warning("No geographic data available for the selected trials.")
+                st.warning(f"No cities with population ≥ {min_population/1000:.0f}k found in the data.")
+                
+            # Count cities excluded due to population threshold
+            cities_below_threshold = city_counts[
+                (city_counts['population'].notna()) & 
+                (city_counts['population'] < min_population)
+            ]
+            
+            # Show excluded cities
+            with st.expander(f"Cities Excluded Due to Population Threshold (< {min_population/1000:.0f}k) ({len(cities_below_threshold)})", expanded=False):
+                if not cities_below_threshold.empty:
+                    st.write("The following cities/areas had trials but were excluded from the visualization due to population threshold:")
+                    cities_table = cities_below_threshold.sort_values('population', ascending=False)
+                    
+                    # Add display names with proper capitalization
+                    cities_table['city_display'] = cities_table['city'].apply(
+                        lambda x: ' '.join(word.capitalize() for word in x.split())
+                    )
+                    
+                    cities_table = cities_table[['city_display', 'trial_count', 'population']]
+                    cities_table.columns = ['City/Area', 'Number of Trials', 'Population']
+                    st.dataframe(cities_table, use_container_width=True)
+                else:
+                    st.write("No cities were excluded due to the population threshold.")
+            
+            # Info on metropolitan area consolidation
+            with st.expander("Metropolitan Area Consolidation Details", expanded=False):
+                st.write("### Metropolitan Area Groupings")
+                
+                st.write("#### Greater Toronto Area (GTA)")
+                st.write(f"Population: {METRO_POPULATIONS['greater toronto area']:,}")
+                st.write("The following cities and towns have been consolidated into the Greater Toronto Area:")
+                st.write(", ".join(sorted(GREATER_TORONTO_AREA_CITIES)))
+                
+                st.write("#### Metro Vancouver")
+                st.write(f"Population: {METRO_POPULATIONS['metro vancouver']:,}")
+                st.write("The following cities and districts have been consolidated into Metro Vancouver:")
+                st.write(", ".join(sorted(METRO_VANCOUVER_CITIES)))
+                
+                # Show which cities in the data were actually mapped
+                filtered_facilities_df = facilities_df.copy()
+                filtered_facilities_df['unmapped_city'] = filtered_facilities_df['city'].apply(
+                    lambda x: normalize_city_name(x, apply_metro_mapping=False)
+                )
+                
+                # List cities that were mapped to Metro Vancouver
+                metro_van_cities = filtered_facilities_df[
+                    filtered_facilities_df['unmapped_city'].isin(METRO_VANCOUVER_CITIES)
+                ]['unmapped_city'].unique()
+                
+                st.write("##### Cities in this dataset mapped to Metro Vancouver:")
+                if len(metro_van_cities) > 0:
+                    st.write(", ".join(sorted(metro_van_cities)))
+                else:
+                    st.write("No cities in the current dataset were mapped to Metro Vancouver.")
+                
+                # List cities that were mapped to GTA  
+                gta_cities = filtered_facilities_df[
+                    filtered_facilities_df['unmapped_city'].isin(GREATER_TORONTO_AREA_CITIES)
+                ]['unmapped_city'].unique()
+                
+                st.write("##### Cities in this dataset mapped to Greater Toronto Area:")
+                if len(gta_cities) > 0:
+                    st.write(", ".join(sorted(gta_cities)))
+                else:
+                    st.write("No cities in the current dataset were mapped to Greater Toronto Area.")
 
     
 def plot_phase_distribution(df: pd.DataFrame) -> px.bar:
@@ -674,7 +1100,7 @@ def plot_phase_distribution(df: pd.DataFrame) -> px.bar:
         x='phase',
         y='count',
         labels={'phase': 'Trial Phase', 'count': 'Number of Trials'},
-        title=f"Distribution of Pediatric Trials by Phase (n = {n} Trials Reporting Phase)",
+        title=f"Distribution of Trials by Phase (n = {n} Trials Reporting Phase)",
         color='phase',
         # category_orders won't matter if we already sorted the data, 
         # but you can still include it for safety:
@@ -689,7 +1115,7 @@ def plot_status_distribution(df: pd.DataFrame) -> px.pie:
     Create a pie chart showing the distribution of trials by status.
     
     Args:
-        df: DataFrame containing pediatric trial data
+        df: DataFrame containing trial data
         
     Returns:
         Plotly pie chart figure
@@ -712,7 +1138,7 @@ def plot_yearly_trends(df: pd.DataFrame) -> Tuple[px.bar, px.area]:
     Create charts showing trial trends by year and status.
     
     Args:
-        df: DataFrame containing pediatric trial data
+        df: DataFrame containing trial data
         
     Returns:
         Tuple of (bar chart figure, area chart figure)
@@ -730,7 +1156,7 @@ def plot_yearly_trends(df: pd.DataFrame) -> Tuple[px.bar, px.area]:
         y='count',
         color='overall_status',
         labels={'start_year': 'Start Year', 'count': 'Number of Trials', 'overall_status': 'Status'},
-        title='Pediatric Clinical Trials by Start Year and Status'
+        title='Clinical Trials by Start Year and Status'
     )
     fig_bar.update_layout(
         xaxis_title="Start Year",
@@ -746,7 +1172,7 @@ def plot_yearly_trends(df: pd.DataFrame) -> Tuple[px.bar, px.area]:
         y='count',
         color='overall_status',
         labels={'start_year': 'Start Year', 'count': 'Number of Trials', 'overall_status': 'Status'},
-        title='Cumulative Pediatric Trials by Year and Status'
+        title='Cumulative Trials by Year and Status'
     )
     fig_area.update_layout(template="plotly_white")
     
@@ -758,7 +1184,7 @@ def plot_trial_age_distribution(df: pd.DataFrame) -> px.histogram:
     Create a histogram showing the distribution of minimum ages in trials.
     
     Args:
-        df: DataFrame containing pediatric trial data
+        df: DataFrame containing trial data
         
     Returns:
         Plotly histogram figure
@@ -772,7 +1198,7 @@ def plot_trial_age_distribution(df: pd.DataFrame) -> px.histogram:
     )
     fig.update_layout(template="plotly_white")
     
-    # Add vertical lines for common pediatric age boundaries
+    # Add vertical lines for common age boundaries
     boundaries = [
         (0, "Birth"),
         (1, "1 month"),
@@ -796,16 +1222,16 @@ def plot_trial_age_distribution(df: pd.DataFrame) -> px.histogram:
 
 def render_summary_metrics(df: pd.DataFrame):
     """
-    Render summary metrics for the pediatric trials data.
+    Render summary metrics for the trials data.
     
     Args:
-        df: DataFrame containing pediatric trial data
+        df: DataFrame containing trial data
     """
     total_trials = len(df)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Pediatric Trials", total_trials)
+        st.metric("Total Trials", total_trials)
     with col2:
         active_trials = df[df['overall_status'].isin(['RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION'])].shape[0]
         st.metric("Active Trials", active_trials)
@@ -819,7 +1245,7 @@ def render_trial_details(df: pd.DataFrame, conn, keywords_dict=None, conditions_
     Render detailed information for a selected trial.
     
     Args:
-        df: DataFrame containing pediatric trial data
+        df: DataFrame containing trial data
         conn: Database connection for fetching additional data
         keywords_dict: Dictionary mapping NCT IDs to keywords
         conditions_dict: Dictionary mapping NCT IDs to conditions

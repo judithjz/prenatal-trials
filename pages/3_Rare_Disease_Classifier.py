@@ -219,9 +219,9 @@ def render_search_page():
                     trials_to_classify = [selected_trial] if selected_trial else []
                 else:
                     trials_to_classify = filtered_df['nct_id'].tolist()
-                    limit = min(len(trials_to_classify), 25)  # Limit for API usage
+                    limit = min(len(trials_to_classify), 750)  # API usage increased to allow for classification of pediatric studies.
                     trials_to_classify = trials_to_classify[:limit]
-                    st.write(f"Will classify {limit} trials (limited to 25 for API usage)")
+                    st.write(f"Will classify {limit} trials (limited to 750 for API usage)")
                 
                 # Check if API key exists
                 if not anthropic_api_key:
