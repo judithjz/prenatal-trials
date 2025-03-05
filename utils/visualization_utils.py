@@ -367,10 +367,10 @@ def plot_normalized_geographic_map(facilities_df: pd.DataFrame, min_population: 
     # Add population data
     # For metro areas, we need to define population manually
     # These are approximate population values for the metro areas
-    METRO_POPULATIONS = {
-        'metro vancouver': 2463431,  # Metro Vancouver population
-        'greater toronto area': 6417516,  # GTA population
-    }
+    # METRO_POPULATIONS = {
+    #     'metro vancouver': 2463431,  # Metro Vancouver population
+    #     'greater toronto area': 6417516,  # GTA population
+    # }
     
     # Add city populations, prioritizing metro area populations for consolidated areas
     city_counts['population'] = city_counts['norm_city'].apply(

@@ -185,11 +185,10 @@ def main():
                 render_summary_metrics(filtered_df)
                 
                 # Create tabs for different sections
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                tab1, tab2, tab3, tab4, tab5 = st.tabs([
                     "Trial List", 
                     "Charts", 
-                    "Geographic Map", 
-                    "Province Distribution",
+                    "Geographic Distribution", 
                     "Interventions and Conditions", 
                     "Trial Details"
                 ])
@@ -236,12 +235,11 @@ def main():
 
                      # Add the population-normalized visualization
                     render_city_visualization_normalized(filtered_df, conn)
-                
-                with tab4:
+
                     # Add province distribution visualization
                     render_province_visualization(filtered_df, conn, title_prefix="Pediatric")
 
-                with tab5:
+                with tab4:
                     # Add interventions and conditions analysis
                     render_interventions_conditions_analysis(
                         filtered_df, 
@@ -251,7 +249,7 @@ def main():
                         interventions_df=fetch_interventions_for_trials(conn, filtered_df['nct_id'].tolist())
                     )
 
-                with tab6:
+                with tab5:
                     st.subheader("Trial Details")
                     
                     # Use the utility function to render trial details
