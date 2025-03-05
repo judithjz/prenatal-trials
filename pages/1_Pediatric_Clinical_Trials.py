@@ -6,6 +6,7 @@ from utils.database_utils import (
     connect_to_database,
     fetch_pediatric_trials_in_canada,
     fetch_conditions_for_trials,
+    fetch_interventions_for_trials,
     fetch_keywords_for_trials,
     fetch_facilities_for_trials,
     prepare_city_data,
@@ -32,7 +33,8 @@ from utils.visualization_utils import (
     render_city_visualization_normalized,
     render_summary_metrics,
     render_trial_details,
-    render_province_visualization 
+    render_province_visualization ,
+    render_interventions_conditions_analysis
 )
 
 from utils.api_utils import (
@@ -43,7 +45,7 @@ from utils.api_utils import (
 def main():
     # Set page config
     st.set_page_config(
-        page_title="Pediatric Clinical Trials in Canada",
+        page_title="Pediatric Clinical Trial Sites in Canada",
         page_icon="🧬",
         layout="wide"
     )
@@ -51,7 +53,7 @@ def main():
     # Initialize session state variables
     initialize_session_state()
         
-    st.title("Pediatric Clinical Trials in Canada")
+    st.title("Pediatric Clinical Trial Sites in Canada")
     st.write("This page displays clinical trials with sites in Canada that include participants under 18 years old.")
     
     # Connect to the database
@@ -186,14 +188,14 @@ def main():
                 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                     "Trial List", 
                     "Charts", 
-                    "Canada Map", 
-                    "Population-Normalized Map",
-                    "Province Distribution",  # Add this new tab
+                    "Geographic Map", 
+                    "Province Distribution",
+                    "Interventions and Conditions", 
                     "Trial Details"
                 ])
 
                 with tab1:
-                    st.subheader("Pediatric Clinical Trials")
+                    st.subheader("Pediatric Clinical Trial Sites")
                     # Display the trials in a dataframe
                     display_cols = ['nct_id', 'brief_title', 'overall_status', 'minimum_age', 'phase', 'start_date', 'num_canadian_sites']
                     st.dataframe(filtered_df[display_cols], use_container_width=True)
@@ -231,14 +233,23 @@ def main():
                     # FIX: Pass only filtered_df and conn, not the facilities_df
                     # This ensures that the visualization only uses facilities for the filtered trials
                     render_city_visualization(filtered_df, conn)
+
+                     # Add the population-normalized visualization
+                    render_city_visualization_normalized(filtered_df, conn)
                 
                 with tab4:
-                    # Add the population-normalized visualization
-                    render_city_visualization_normalized(filtered_df, conn)
-
-                with tab5:
                     # Add province distribution visualization
                     render_province_visualization(filtered_df, conn, title_prefix="Pediatric")
+
+                with tab5:
+                    # Add interventions and conditions analysis
+                    render_interventions_conditions_analysis(
+                        filtered_df, 
+                        conn, 
+                        title_prefix="Pediatric",
+                        conditions_dict=safe_get_session_state('conditions_dict', {}),
+                        interventions_df=fetch_interventions_for_trials(conn, filtered_df['nct_id'].tolist())
+                    )
 
                 with tab6:
                     st.subheader("Trial Details")

@@ -2,400 +2,28 @@
 Visualization utility functions for the Clinical Trials app.
 This module contains reusable visualization functions for creating charts and maps.
 """
+import streamlit as st
 import unicodedata
 import re
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Union, Any
-import plotly.express as px
-import streamlit as st
 from pandas.api.types import CategoricalDtype
+import plotly.express as px
+import plotly.graph_objects as go
+from collections import Counter
+from typing import Dict, List, Optional, Tuple, Union, Any
 
-# Population data for Canadian cities (based on recent census data)
-CITY_POPULATIONS = {
-    # Ontario
-    'toronto': 2731571,
-    'ottawa': 934243,
-    'mississauga': 721599,
-    'brampton': 593638,
-    'hamilton': 536917,
-    'london': 383822,
-    'markham': 328966,
-    'vaughan': 306233,
-    'kitchener': 233222,
-    'windsor': 217188,
-    'richmond hill': 195022,
-    'oakville': 193832,
-    'burlington': 183314,
-    'oshawa': 159458,
-    'barrie': 141434,
-    'st. catharines': 133113,
-    'guelph': 131794,
-    'cambridge': 129920,
-    'whitby': 128377,
-    'kingston': 117660,
-    'thunder bay': 108843,
-    'waterloo': 104986,
-    'milton': 110128,
-    'ajax': 119677,
-    'newmarket': 84224,
-    'peterborough': 81032,
-    'sarnia': 71594,
-    'north bay': 51553,
-    'orillia': 31166,
-    'cobourg': 19440,
-    'caledon': 76581,
-    'brantford': 134203,
-    'east york': 118071,  # Part of Toronto
-    'north york': 691600,  # Part of Toronto
-    'scarborough': 632098,  # Part of Toronto
-    'etobicoke': 365143,  # Part of Toronto
-    'thornhill': 112719,  # Part of Vaughan/Markham
-    'woodbridge': 105228,  # Part of Vaughan
-    
-    # Quebec
-    'montreal': 1704694,
-    'quebec city': 531902,
-    'quebec': 531902,  # Same as quebec city
-    'laval': 422993,
-    'gatineau': 276245,
-    'longueuil': 239700,
-    'sherbrooke': 161323,
-    'saguenay': 144230,
-    'trois-rivières': 134413,
-    'chicoutimi': 66547,  # Part of Saguenay
-    'rimouski': 47006,
-    'st-jérôme': 77301,
-    'ste-foy': 98659,  # Part of Quebec City
-    'saint-jean-sur-richelieu': 92394,
-    'baie-saint-paul': 7146,
-    'pointe-claire': 31380,
-    'saint-eustache': 43784,
-    'la malbaie': 8271,
-    
-    # British Columbia
-    'vancouver': 2643000, # Changed from 631486 to population of Greater Vancouver Area (TODO: will need to remove other cities)
-    'surrey': 518467,
-    'burnaby': 232755,
-    'richmond': 198309,
-    'abbotsford': 141397,
-    'coquitlam': 139284,
-    'kelowna': 142146,
-    'victoria': 85792,
-    'nanaimo': 90504,
-    'kamloops': 90280,
-    'chilliwack': 83788,
-    'new westminster': 70996,
-    'west vancouver': 42473,
-    'penticton': 33761,
-    'whistler': 11854,
-    'cranbrook': 20499,
-    'fort st. james': 1598,
-    'grand forks': 4049,
-    'canal flats': 668,
-    'chetwynd': 2503,
-    'lytton': 249,
-    
-    # Alberta
-    'calgary': 1239220,
-    'edmonton': 932546,
-    'red deer': 100418,
-    'lethbridge': 92729,
-    'st. albert': 65589,
-    'medicine hat': 63271,
-    'grande prairie': 63166,
-    'sherwood park': 70618,  # Part of Strathcona County
-    'canmore': 13992,
-    'banff': 7847,
-    'camrose': 18742,
-    
-    # Manitoba
-    'winnipeg': 705244,
-    
-    # Saskatchewan
-    'saskatoon': 273010,
-    'regina': 228928,
-    
-    # Nova Scotia
-    'halifax': 403131,
-    
-    # New Brunswick
-    'saint john': 67575,
-    'st. john': 67575,  # Same as saint john
-    'moncton': 71889,
-    'fredericton': 58220,
-    
-    # Newfoundland and Labrador
-    "st. john's": 108860,
-    
-    # Special cases
-    'windermere': 2800,  # Part of Vaughan
-    'winchester': 2394,
-    'alliston': 19243,  # Part of New Tecumseth
-    'coburg': 19440,  # Same as Cobourg
-}
-
-# Global dictionary for common misspellings and aliases
-SPELLING_CORRECTIONS = {
-    # Montreal variations
-    'montréal': 'montreal',
-    'montr al': 'montreal',
-    'montral': 'montreal',
-    'montr al,': 'montreal',
-    'mtl': 'montreal',
-    'mont-royal': 'montreal',
-    
-    # Vancouver variations
-    'west vancouver': 'vancouver',
-    'vancouver bc': 'vancouver',
-    'van': 'vancouver',
-    
-    # Toronto variations
-    'tor': 'toronto',
-    'gta': 'toronto',
-
-    # Hamilton variations
-    'hamitlon': 'hamilton',
-    
-    # Quebec variations
-    'qc': 'quebec',
-    'qc city': 'quebec city',
-
-    # Sherbrooke variations
-    'sherbrook': 'sherbrooke',
-
-    # Edmonton variations
-    'edmonton ab': 'edmonton',
-    
-    # Winnipeg variations
-    'winnepeg': 'winnipeg',
-
-    # Halifax variations
-    'dalhousie': 'halifax',
-
-    # St. John's variations
-    "saint johns": "st john",
-    "st johns": "st john",
-    
-    # Other variations: if the value is None, it means to ignore province names
-    'ontario': None,
-    'bc': None,
-    'alberta': None,
-
-    # For "quebec", if used in a province context, force the accented version for city lookup
-    'quebec': 'québec'
-}
-
-# Global dictionary for city coordinates
-CITY_COORDS = {
-    # Ontario
-    'toronto': {'lat': 43.651070, 'lon': -79.347015},
-    'ottawa': {'lat': 45.424721, 'lon': -75.695000},
-    'mississauga': {'lat': 43.589045, 'lon': -79.644119},
-    'hamilton': {'lat': 43.255722, 'lon': -79.871101},
-    'london': {'lat': 42.983612, 'lon': -81.249725},
-    'kitchener': {'lat': 43.451290, 'lon': -80.492763},
-    'windsor': {'lat': 42.3149, 'lon': -83.0364},
-    'ajax': {'lat': 43.8509, 'lon': -79.0205},
-    'markham': {'lat': 43.8561, 'lon': -79.3370},
-    'waterloo': {'lat': 43.4643, 'lon': -80.5204},
-    'richmond hill': {'lat': 43.8828, 'lon': -79.4403},
-    'barrie': {'lat': 44.3894, 'lon': -79.6903},
-    'newmarket': {'lat': 44.0582, 'lon': -79.4622},
-    'oshawa': {'lat': 43.8971, 'lon': -78.8658},
-    'oakville': {'lat': 43.4675, 'lon': -79.6877},
-    'burlington': {'lat': 43.3255, 'lon': -79.7990},
-    'niagara falls': {'lat': 43.0896, 'lon': -79.0849},
-    'etobicoke': {'lat': 43.6205, 'lon': -79.5132},
-    'thornhill': {'lat': 43.8161, 'lon': -79.4269},
-    'brampton': {'lat': 43.7315, 'lon': -79.7624},
-    'peterborough': {'lat': 44.3091, 'lon': -78.3197},
-    'north bay': {'lat': 46.3091, 'lon': -79.4608},
-    'guelph': {'lat': 43.5448, 'lon': -80.2482},
-    'scarborough': {'lat': 43.7764, 'lon': -79.2318},
-    'st. catharines': {'lat': 43.1594, 'lon': -79.2469},
-    'st catharines': {'lat': 43.1594, 'lon': -79.2469},
-    'thunder bay': {'lat': 48.3809, 'lon': -89.2477},
-    'north york': {'lat': 43.7615, 'lon': -79.4111},
-    'sarnia': {'lat': 42.9745, 'lon': -82.4066},
-    'east york': {'lat': 43.6909, 'lon': -79.3352},
-    'vaughan': {'lat': 43.8563, 'lon': -79.5085},
-    'cobourg': {'lat': 43.9593, 'lon': -78.1677},
-    'whitby': {'lat': 43.8975, 'lon': -78.9428},
-    'kingston': {'lat': 44.230687, 'lon': -76.481323},
-    'orillia': {'lat': 44.6087, 'lon': -79.4207},
-    'woodbridge': {'lat': 43.7758, 'lon': -79.5992},
-    'brantford': {'lat': 43.1394, 'lon': -80.2644},
-    'caledon': {'lat': 43.8358, 'lon': -79.8661},
-    'west hamilton': {'lat': 43.2555, 'lon': -79.9100},
-    
-    # Quebec
-    'montreal': {'lat': 45.508888, 'lon': -73.561668},
-    'quebec city': {'lat': 46.813878, 'lon': -71.207981},
-    'quebec': {'lat': 46.813878, 'lon': -71.207981},
-    'gatineau': {'lat': 45.476545, 'lon': -75.701271},
-    'sherbrooke': {'lat': 45.404242, 'lon': -71.894917},
-    'laval': {'lat': 45.606649, 'lon': -73.712409},
-    'chicoutimi': {'lat': 48.4283, 'lon': -71.0582},
-    'rimouski': {'lat': 48.4488, 'lon': -68.5236},
-    'st-jérôme': {'lat': 45.7809, 'lon': -74.0036},
-    'trois-rivières': {'lat': 46.3432, 'lon': -72.5430},
-    'ste-foy': {'lat': 46.7805, 'lon': -71.2872},
-    'saint-jean-sur-richelieu': {'lat': 45.3007, 'lon': -73.2574},
-    'baie-saint-paul': {'lat': 47.4417, 'lon': -70.5042},
-    'pointe-claire': {'lat': 45.4490, 'lon': -73.8166},
-    'saint-eustache': {'lat': 45.5641, 'lon': -73.9035},
-    'saguenay': {'lat': 48.4260, 'lon': -71.0725},
-    'la malbaie': {'lat': 47.6549, 'lon': -70.1522},
-    
-    # British Columbia
-    'vancouver': {'lat': 49.246292, 'lon': -123.116226},
-    'victoria': {'lat': 48.428329, 'lon': -123.365868},
-    'burnaby': {'lat': 49.248809, 'lon': -122.980507},
-    'surrey': {'lat': 49.104431, 'lon': -122.801094},
-    'kelowna': {'lat': 49.887952, 'lon': -119.496010},
-    'new westminster': {'lat': 49.2057, 'lon': -122.9110},
-    'penticton': {'lat': 49.4991, 'lon': -119.5937},
-    'west vancouver': {'lat': 49.3690, 'lon': -123.1715},
-    'whistler': {'lat': 50.1162, 'lon': -122.9535},
-    'abbotsford': {'lat': 49.0504, 'lon': -122.3045},
-    'nanaimo': {'lat': 49.1659, 'lon': -123.9401},
-    'kamloops': {'lat': 50.6745, 'lon': -120.3273},
-    'cranbrook': {'lat': 49.5097, 'lon': -115.7663},
-    'richmond': {'lat': 49.1666, 'lon': -123.1336},
-    'fort st. james': {'lat': 54.4438, 'lon': -124.2542},
-    'grand forks': {'lat': 49.0313, 'lon': -118.4447},
-    'canal flats': {'lat': 50.1513, 'lon': -115.8319},
-    'chetwynd': {'lat': 55.6978, 'lon': -121.6298},
-    'cariboo': {'lat': 52.9283, 'lon': -122.4461},
-    'lytton': {'lat': 50.2337, 'lon': -121.5820},
-    
-    # Alberta
-    'calgary': {'lat': 51.044270, 'lon': -114.062019},
-    'edmonton': {'lat': 53.544388, 'lon': -113.490929},
-    'sherwood park': {'lat': 53.5413, 'lon': -113.2958},
-    'red deer': {'lat': 52.269, 'lon': -113.811},
-    'lethbridge': {'lat': 49.6956, 'lon': -112.8451},
-    'canmore': {'lat': 51.0884, 'lon': -115.3475},
-    'st. albert': {'lat': 53.6322, 'lon': -113.6275},
-    'grande prairie': {'lat': 55.1707, 'lon': -118.7947},
-    'banff': {'lat': 51.1784, 'lon': -115.5708},
-    'camrose': {'lat': 53.0216, 'lon': -112.8335},
-    'medicine hat': {'lat': 50.0405, 'lon': -110.6768},
-    
-    # Manitoba
-    'winnipeg': {'lat': 49.895077, 'lon': -97.138451},
-    
-    # Saskatchewan
-    'saskatoon': {'lat': 52.131802, 'lon': -106.655808},
-    'regina': {'lat': 50.445210, 'lon': -104.618896},
-    
-    # Nova Scotia
-    'halifax': {'lat': 44.648618, 'lon': -63.586002},
-    
-    # New Brunswick
-    'saint john': {'lat': 45.273220, 'lon': -66.063308},
-    'st. john': {'lat': 45.273220, 'lon': -66.063308},
-    'moncton': {'lat': 46.090946, 'lon': -64.790306},
-    'fredericton': {'lat': 45.9636, 'lon': -66.6431},
-    
-    # Newfoundland and Labrador
-    "st. john's": {'lat': 47.561510, 'lon': -52.712577},
-    
-    # Other locations/special cases
-    'windermere': {'lat': 43.6631, 'lon': -79.4749},
-    'winchester': {'lat': 45.0842, 'lon': -75.3500},
-    'alliston': {'lat': 44.1502, 'lon': -79.8682},
-    'coburg': {'lat': 43.9593, 'lon': -78.1677},
-}
-
-# Define metro area groupings
-METRO_VANCOUVER_CITIES = {
-    'vancouver',
-    'burnaby',
-    'coquitlam',
-    'delta',
-    'langley',  # Covers both City and District
-    'langley city',
-    'langley district',
-    'maple ridge',
-    'new westminster',
-    'north vancouver',  # Covers both City and District
-    'north vancouver city',
-    'north vancouver district',
-    'pitt meadows',
-    'port coquitlam',
-    'port moody',
-    'richmond',
-    'surrey',
-    'white rock',
-    'west vancouver',
-    'bowen island',
-    'anmore',
-    'belcarra',
-    # Add common spelling variations
-    'west van',
-    'north van',
-    'poco',  # Common abbreviation for Port Coquitlam
-    'new west',  # Common abbreviation for New Westminster
-}
-
-GREATER_TORONTO_AREA_CITIES = {
-    # Toronto (Core)
-    'toronto',
-    'north york',
-    'scarborough',
-    'etobicoke',
-    'east york',
-    'york',
-    
-    # Peel Region
-    'mississauga',
-    'brampton',
-    'caledon',
-    
-    # York Region
-    'vaughan',
-    'markham',
-    'richmond hill',
-    'aurora',
-    'newmarket',
-    'king',
-    'whitchurch-stouffville',
-    'stouffville',
-    'east gwillimbury',
-    'georgina',
-    
-    # Durham Region
-    'pickering',
-    'ajax',
-    'whitby',
-    'oshawa',
-    'clarington',
-    'uxbridge',
-    'scugog',
-    'port perry',
-    'brock',
-    'beaverton',
-    'cannington',
-    'sunderland',
-    
-    # Halton Region
-    'oakville',
-    'burlington',
-    'milton',
-    'halton hills',
-    'georgetown',
-    'acton',
-    
-    # Common variations and abbreviations
-    'gta',
-    'the 6',
-    'the six',
-    'tdot',
-    'the dot',
-    't.o.',
-    'to',
-}
+# Import data constants from the new module
+from utils.data_constants import (
+    METRO_VANCOUVER_CITIES,
+    GREATER_TORONTO_AREA_CITIES,
+    PROVINCE_MAPPING,
+    PROVINCE_POPULATIONS,
+    CITY_COORDS,
+    METRO_POPULATIONS,
+    CITY_POPULATIONS,
+    SPELLING_CORRECTIONS,
+    ONCOLOGY_KEYWORDS
+)
 
 def metropolitan_area_mapping(city_name: str) -> str:
     """
@@ -1231,13 +859,13 @@ def render_summary_metrics(df: pd.DataFrame):
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Trials", total_trials)
+        st.metric("Total Trial Sites", total_trials)
     with col2:
         active_trials = df[df['overall_status'].isin(['RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION'])].shape[0]
-        st.metric("Active Trials", active_trials)
+        st.metric("Active Trial Sites", active_trials)
     with col3:
         recruiting_trials = df[df['overall_status'] == 'RECRUITING'].shape[0]
-        st.metric("Recruiting Trials", recruiting_trials)
+        st.metric("Recruiting Trial Sites", recruiting_trials)
 
 
 def render_trial_details(df: pd.DataFrame, conn, keywords_dict=None, conditions_dict=None):
@@ -1308,85 +936,6 @@ def render_trial_details(df: pd.DataFrame, conn, keywords_dict=None, conditions_
         st.markdown(f"[View on ClinicalTrials.gov](https://clinicaltrials.gov/study/{selected_trial})")
 
 # Canadian provinces and territories mapping
-PROVINCE_MAPPING = {
-    'ON': 'Ontario',
-    'QC': 'Quebec',
-    'BC': 'British Columbia',
-    'AB': 'Alberta',
-    'MB': 'Manitoba',
-    'SK': 'Saskatchewan',
-    'NS': 'Nova Scotia',
-    'NB': 'New Brunswick',
-    'NL': 'Newfoundland and Labrador',
-    'PE': 'Prince Edward Island',
-    'NT': 'Northwest Territories',
-    'YT': 'Yukon',
-    'NU': 'Nunavut',
-    # Common city to province mappings for data cleanup
-    'toronto': 'Ontario',
-    'ottawa': 'Ontario',
-    'mississauga': 'Ontario',
-    'hamilton': 'Ontario',
-    'london': 'Ontario',
-    'markham': 'Ontario',
-    'vaughan': 'Ontario',
-    'kitchener': 'Ontario',
-    'windsor': 'Ontario',
-    'greater toronto area': 'Ontario',
-    
-    'montreal': 'Quebec',
-    'quebec city': 'Quebec',
-    'quebec': 'Quebec',
-    'laval': 'Quebec',
-    'gatineau': 'Quebec',
-    'sherbrooke': 'Quebec',
-    
-    'vancouver': 'British Columbia',
-    'victoria': 'British Columbia',
-    'burnaby': 'British Columbia',
-    'richmond': 'British Columbia',
-    'surrey': 'British Columbia',
-    'kelowna': 'British Columbia',
-    'metro vancouver': 'British Columbia',
-    
-    'calgary': 'Alberta',
-    'edmonton': 'Alberta',
-    'red deer': 'Alberta',
-    'lethbridge': 'Alberta',
-    
-    'winnipeg': 'Manitoba',
-    
-    'saskatoon': 'Saskatchewan',
-    'regina': 'Saskatchewan',
-    
-    'halifax': 'Nova Scotia',
-    
-    'saint john': 'New Brunswick',
-    'st. john': 'New Brunswick',
-    'moncton': 'New Brunswick',
-    'fredericton': 'New Brunswick',
-    
-    "st. john's": 'Newfoundland and Labrador',
-    
-    'charlottetown': 'Prince Edward Island'
-}
-
-# Province population data (2021 census)
-PROVINCE_POPULATIONS = {
-    'Ontario': 14223942,
-    'Quebec': 8501833,
-    'British Columbia': 5000879,
-    'Alberta': 4262635,
-    'Manitoba': 1342153,
-    'Saskatchewan': 1132505,
-    'Nova Scotia': 969383,
-    'New Brunswick': 775610,
-    'Newfoundland and Labrador': 510550,
-    'Prince Edward Island': 154331,
-    'Northwest Territories': 41070,
-    'Yukon': 40232,
-    'Nunavut': 36858
-}
 
 def get_province_from_city(city: str) -> str:
     """
@@ -1599,4 +1148,777 @@ def render_province_visualization(filtered_df: pd.DataFrame, conn: any, title_pr
             st.warning("No province data available for the selected trials.")
     else:
         st.warning("No facility data available for province analysis.")
+
+
+def classify_condition(condition: str) -> str:
+    """
+    Classify a condition into a category.
+    Currently distinguishes between oncology and other conditions.
+    
+    Args:
+        condition: Condition name to classify
         
+    Returns:
+        Category name (Oncology or Other)
+    """
+    # Uses ONCOLOGY_KEYWORDS imported from data_constants
+    if condition:
+        condition_lower = condition.lower()
+        for keyword in ONCOLOGY_KEYWORDS:
+            if keyword in condition_lower:
+                return 'Oncology'
+    
+    return 'Other'
+
+
+def count_intervention_types(interventions_df: pd.DataFrame) -> Dict[str, int]:
+    """
+    Count the frequency of each intervention type.
+    
+    Args:
+        interventions_df: DataFrame with intervention data
+        
+    Returns:
+        Dictionary mapping intervention types to counts
+    """
+    return dict(Counter(interventions_df['intervention_type']))
+
+
+def count_top_conditions(conditions_dict: Dict[str, List[str]], limit: int = 15, by_category: bool = False) -> pd.DataFrame:
+    """
+    Count the frequency of each condition across all trials.
+    
+    Args:
+        conditions_dict: Dictionary mapping NCT IDs to lists of conditions
+        limit: Max number of top conditions to return
+        by_category: Whether to return data grouped by category
+        
+    Returns:
+        DataFrame with condition counts, sorted by frequency
+    """
+    # Flatten the conditions list
+    all_conditions = []
+    for conditions in conditions_dict.values():
+        all_conditions.extend(conditions)
+    
+    # Count and sort
+    condition_counts = Counter(all_conditions)
+    
+    # Convert to DataFrame
+    df = pd.DataFrame({
+        'condition': list(condition_counts.keys()),
+        'count': list(condition_counts.values())
+    })
+    
+    # Add category
+    df['category'] = df['condition'].apply(classify_condition)
+    
+    # Sort by count (descending)
+    df = df.sort_values('count', ascending=False)
+    
+    if by_category:
+        # Return all data grouped by category
+        return df
+    else:
+        # Return top N conditions
+        return df.head(limit)
+
+
+def plot_intervention_distribution(interventions_df: pd.DataFrame) -> px.pie:
+    """
+    Create a pie chart showing the distribution of intervention types.
+    
+    Args:
+        interventions_df: DataFrame with intervention data
+        
+    Returns:
+        Plotly pie chart figure
+    """
+    intervention_counts = count_intervention_types(interventions_df)
+    
+    df = pd.DataFrame({
+        'intervention_type': list(intervention_counts.keys()),
+        'count': list(intervention_counts.values())
+    })
+    
+    fig = px.pie(
+        df,
+        values='count',
+        names='intervention_type',
+        title='Distribution of Intervention Types',
+        hole=0.4
+    )
+    
+    fig.update_layout(legend_title="Intervention Type")
+    
+    return fig
+
+
+def plot_top_conditions(conditions_dict: Dict[str, List[str]], limit: int = 15, by_category: bool = True) -> go.Figure:
+    """
+    Create a horizontal bar chart of the top conditions, colored by category.
+    
+    Args:
+        conditions_dict: Dictionary mapping NCT IDs to lists of conditions
+        limit: Max number of top conditions to return per category
+        by_category: Whether to split visualization by category
+        
+    Returns:
+        Plotly bar chart figure
+    """
+    # Get condition data with categories
+    df = count_top_conditions(conditions_dict, limit, by_category=True)
+    
+    if df.empty:
+        return None
+    
+    if by_category:
+        # Create a separate chart for each category
+        fig = go.Figure()
+        
+        # Get top conditions for each category
+        oncology_df = df[df['category'] == 'Oncology'].head(limit)
+        other_df = df[df['category'] == 'Other'].head(limit)
+        
+        # Add Oncology conditions
+        if not oncology_df.empty:
+            fig.add_trace(go.Bar(
+                y=oncology_df['condition'],
+                x=oncology_df['count'],
+                orientation='h',
+                name='Oncology',
+                marker_color='#FF4136',  # Red
+                customdata=oncology_df['category'],
+                hovertemplate='<b>%{y}</b><br>Count: %{x}<br>Category: %{customdata}<extra></extra>'
+            ))
+        
+        # Add Other conditions
+        if not other_df.empty:
+            fig.add_trace(go.Bar(
+                y=other_df['condition'],
+                x=other_df['count'],
+                orientation='h',
+                name='Other',
+                marker_color='#0074D9',  # Blue
+                customdata=other_df['category'],
+                hovertemplate='<b>%{y}</b><br>Count: %{x}<br>Category: %{customdata}<extra></extra>'
+            ))
+        
+        # Update layout
+        fig.update_layout(
+            title=f'Top Conditions by Category',
+            xaxis_title='Number of Trials',
+            yaxis_title='Condition',
+            height=max(400, min(limit * 25 * 2, 800)),
+            legend_title='Category',
+            barmode='group'
+        )
+        
+    else:
+        # Limited to top N overall
+        df = df.head(limit)
+        
+        # Use different colors for different categories
+        color_map = {'Oncology': '#FF4136', 'Other': '#0074D9'}
+        
+        fig = px.bar(
+            df,
+            y='condition',
+            x='count',
+            orientation='h',
+            title=f'Top {limit} Conditions',
+            labels={'condition': 'Condition', 'count': 'Number of Trials', 'category': 'Category'},
+            color='category',
+            color_discrete_map=color_map,
+            hover_data=['category']
+        )
+        
+        fig.update_layout(
+            height=max(400, min(limit * 25, 800)),
+            yaxis={'categoryorder': 'total ascending'}
+        )
+    
+    return fig
+
+
+def plot_conditions_network(conditions_dict: Dict[str, List[str]], min_co_occurrence: int = 2) -> Optional[go.Figure]:
+    """
+    Create a network diagram showing conditions that co-occur in trials.
+    
+    Args:
+        conditions_dict: Dictionary mapping NCT IDs to lists of conditions
+        min_co_occurrence: Minimum number of co-occurrences to include in the network
+        
+    Returns:
+        Plotly graph object figure or None if networkx is not available
+    """
+    # Check if networkx is available
+    try:
+        import networkx as nx
+    except ImportError:
+        st.warning("The networkx library is required for the conditions network visualization. Please install it with `pip install networkx`.")
+        return None
+    
+    # Count co-occurrences
+    co_occurrences = {}
+    
+    for conditions in conditions_dict.values():
+        if len(conditions) > 1:
+            # For each pair of conditions in this trial
+            for i, cond1 in enumerate(conditions):
+                for cond2 in conditions[i+1:]:
+                    pair = tuple(sorted([cond1, cond2]))
+                    if pair in co_occurrences:
+                        co_occurrences[pair] += 1
+                    else:
+                        co_occurrences[pair] = 1
+    
+    # Filter by minimum co-occurrence
+    filtered_co_occurrences = {pair: count for pair, count in co_occurrences.items() 
+                             if count >= min_co_occurrence}
+    
+    if not filtered_co_occurrences:
+        return None
+    
+    # Get unique conditions
+    unique_conditions = set()
+    for pair in filtered_co_occurrences.keys():
+        unique_conditions.add(pair[0])
+        unique_conditions.add(pair[1])
+    
+    # Create node DataFrame
+    nodes = pd.DataFrame({
+        'id': list(range(len(unique_conditions))),
+        'label': list(unique_conditions)
+    })
+    
+    # Add category to nodes
+    nodes['category'] = nodes['label'].apply(classify_condition)
+    
+    # Create mapping from condition to node ID
+    condition_to_id = {cond: idx for idx, cond in enumerate(unique_conditions)}
+    
+    # Create edge DataFrame
+    edges = []
+    for pair, weight in filtered_co_occurrences.items():
+        source_id = condition_to_id[pair[0]]
+        target_id = condition_to_id[pair[1]]
+        edges.append({
+            'source': source_id,
+            'target': target_id,
+            'weight': weight
+        })
+    
+    edges_df = pd.DataFrame(edges)
+    
+    # Create network visualization using plotly
+    edge_trace = go.Scatter(
+        x=[],
+        y=[],
+        line=dict(width=0.5, color='#888'),
+        hoverinfo='none',
+        mode='lines')
+    
+    # Create network layout (using Fruchterman-Reingold algorithm)
+    G = nx.Graph()
+    
+    # Add nodes
+    for _, row in nodes.iterrows():
+        G.add_node(row['id'], label=row['label'], category=row['category'])
+    
+    # Add edges
+    for _, row in edges_df.iterrows():
+        G.add_edge(row['source'], row['target'], weight=row['weight'])
+    
+    # Calculate layout
+    pos = nx.spring_layout(G, k=0.5, iterations=50)
+    
+    # Add edges to trace
+    for edge in G.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_trace['x'] += (x0, x1, None)
+        edge_trace['y'] += (y0, y1, None)
+    
+    # Create separate node traces for each category
+    oncology_nodes = {'x': [], 'y': [], 'text': [], 'id': []}
+    other_nodes = {'x': [], 'y': [], 'text': [], 'id': []}
+    
+    # Assign nodes to the appropriate category
+    for node in G.nodes():
+        x, y = pos[node]
+        category = G.nodes[node]['category']
+        node_info = G.nodes[node]['label']
+        
+        if category == 'Oncology':
+            oncology_nodes['x'].append(x)
+            oncology_nodes['y'].append(y)
+            oncology_nodes['text'].append(node_info)
+            oncology_nodes['id'].append(node)
+        else:
+            other_nodes['x'].append(x)
+            other_nodes['y'].append(y)
+            other_nodes['text'].append(node_info)
+            other_nodes['id'].append(node)
+    
+    # Create oncology node trace
+    oncology_node_trace = go.Scatter(
+        x=oncology_nodes['x'],
+        y=oncology_nodes['y'],
+        text=oncology_nodes['text'],
+        mode='markers',
+        name='Oncology',
+        marker=dict(
+            color='#FF4136',  # Red
+            size=15,
+            line=dict(width=2)
+        ),
+        hovertemplate='<b>%{text}</b><br>Category: Oncology<extra></extra>'
+    )
+    
+    # Create other node trace
+    other_node_trace = go.Scatter(
+        x=other_nodes['x'],
+        y=other_nodes['y'],
+        text=other_nodes['text'],
+        mode='markers',
+        name='Other',
+        marker=dict(
+            color='#0074D9',  # Blue
+            size=15,
+            line=dict(width=2)
+        ),
+        hovertemplate='<b>%{text}</b><br>Category: Other<extra></extra>'
+    )
+    
+    # Create figure
+    fig = go.Figure(data=[edge_trace, oncology_node_trace, other_node_trace],
+                   layout=go.Layout(
+                       title=dict(
+                           text='Co-occurring Conditions Network (Colored by Category)',
+                           font=dict(size=16)
+                       ),
+                       showlegend=True,
+                       hovermode='closest',
+                       margin=dict(b=20, l=5, r=5, t=40),
+                       legend=dict(
+                           title='Category',
+                           yanchor="top",
+                           y=0.99,
+                           xanchor="right",
+                           x=0.99
+                       ),
+                       xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                       yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                   )
+    
+    return fig
+
+
+def plot_interventions_by_condition(interventions_df: pd.DataFrame, 
+                                   conditions_dict: Dict[str, List[str]], 
+                                   top_n: int = 10) -> Optional[go.Figure]:
+    """
+    Create a heatmap showing the relationship between top conditions and intervention types,
+    with condition categories indicated by colored markers.
+    
+    Args:
+        interventions_df: DataFrame with intervention data
+        conditions_dict: Dictionary mapping NCT IDs to lists of conditions
+        top_n: Number of top conditions to include per category
+        
+    Returns:
+        Plotly heatmap figure or None if insufficient data
+    """
+    # Get top conditions by category
+    top_conditions_df = count_top_conditions(conditions_dict, top_n, by_category=True)
+    
+    # Get top conditions for each category
+    oncology_top = top_conditions_df[top_conditions_df['category'] == 'Oncology'].head(top_n)['condition'].tolist()
+    other_top = top_conditions_df[top_conditions_df['category'] == 'Other'].head(top_n)['condition'].tolist()
+    
+    # Combine top conditions from both categories
+    top_conditions = oncology_top + other_top
+    
+    # Create mapping of nct_id to intervention types
+    nct_to_interventions = {}
+    for _, row in interventions_df.iterrows():
+        if row['nct_id'] not in nct_to_interventions:
+            nct_to_interventions[row['nct_id']] = []
+        nct_to_interventions[row['nct_id']].append(row['intervention_type'])
+    
+    # Count intervention types for each top condition
+    condition_intervention_counts = {}
+    for nct_id, conditions in conditions_dict.items():
+        if nct_id in nct_to_interventions:
+            intervention_types = nct_to_interventions[nct_id]
+            for condition in conditions:
+                if condition in top_conditions:
+                    if condition not in condition_intervention_counts:
+                        condition_intervention_counts[condition] = Counter()
+                    condition_intervention_counts[condition].update(intervention_types)
+    
+    # Get unique intervention types
+    all_intervention_types = set()
+    for counter in condition_intervention_counts.values():
+        all_intervention_types.update(counter.keys())
+    all_intervention_types = sorted(all_intervention_types)
+    
+    # Create heatmap data
+    heatmap_data = []
+    condition_labels = []
+    categories = []
+    
+    for condition in top_conditions:
+        if condition in condition_intervention_counts:
+            counter = condition_intervention_counts[condition]
+            row = [counter.get(int_type, 0) for int_type in all_intervention_types]
+            heatmap_data.append(row)
+            condition_labels.append(condition)
+            categories.append('Oncology' if condition in oncology_top else 'Other')
+    
+    if not heatmap_data:
+        return None
+    
+    # Create the customdata for hover information
+    customdata = []
+    for i, category in enumerate(categories):
+        customdata.append([category] * len(all_intervention_types))
+    
+    # Create heatmap
+    fig = go.Figure()
+    
+    # Add the heatmap
+    fig.add_trace(go.Heatmap(
+        z=heatmap_data,
+        x=all_intervention_types,
+        y=condition_labels,
+        colorscale='Viridis',
+        customdata=customdata,
+        hovertemplate='<b>Condition:</b> %{y}<br><b>Intervention:</b> %{x}<br><b>Count:</b> %{z}<br><b>Category:</b> %{customdata}<extra></extra>'
+    ))
+    
+    # Add category markers next to condition names
+    # Use a separate scatter trace with markers for categories
+    y_positions = list(range(len(condition_labels)))
+    
+    # Oncology markers (red)
+    oncology_y = [y for y, cat in zip(y_positions, categories) if cat == 'Oncology']
+    if oncology_y:
+        fig.add_trace(go.Scatter(
+            x=[-0.5] * len(oncology_y),  # Position to the left of y-axis
+            y=[condition_labels[i] for i in oncology_y],
+            mode='markers',
+            marker=dict(
+                symbol='circle',
+                color='#FF4136',  # Red for Oncology
+                size=8
+            ),
+            name='Oncology',
+            hoverinfo='name',
+            showlegend=True
+        ))
+    
+    # Other markers (blue)
+    other_y = [y for y, cat in zip(y_positions, categories) if cat == 'Other']
+    if other_y:
+        fig.add_trace(go.Scatter(
+            x=[-0.5] * len(other_y),  # Position to the left of y-axis
+            y=[condition_labels[i] for i in other_y],
+            mode='markers',
+            marker=dict(
+                symbol='circle',
+                color='#0074D9',  # Blue for Other
+                size=8
+            ),
+            name='Other',
+            hoverinfo='name',
+            showlegend=True
+        ))
+    
+    # Set layout with improved margins for the legend and title
+    fig.update_layout(
+        title='Intervention Types by Top Conditions',
+        xaxis_title='Intervention Type',
+        yaxis_title='Condition',
+        height=max(500, len(condition_labels) * 25),
+        margin=dict(l=10, r=50, t=50, b=50),
+        legend=dict(
+            title="Condition Category",
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=1.1
+        ),
+        # Hide x-axis value for the markers
+        xaxis=dict(
+            range=[-0.7, len(all_intervention_types) - 0.3],  # Extend x-axis to show markers
+            showgrid=True
+        )
+    )
+    
+    return fig
+
+
+def render_interventions_conditions_analysis(filtered_df: pd.DataFrame, 
+                                            conn: any, 
+                                            title_prefix: str = "Clinical",
+                                            conditions_dict: Optional[Dict[str, List[str]]] = None,
+                                            interventions_df: Optional[pd.DataFrame] = None):
+    """
+    Render the interventions and conditions analysis section.
+    
+    Args:
+        filtered_df: DataFrame with filtered trial data
+        conn: Database connection for fetching additional data
+        title_prefix: Prefix for section titles (e.g., "Pediatric", "Adult")
+        conditions_dict: Optional pre-fetched conditions dictionary
+        interventions_df: Optional pre-fetched interventions DataFrame
+    """
+    # Import necessary functions to avoid circular imports
+    from utils.database_utils import fetch_conditions_for_trials, fetch_interventions_for_trials, build_conditions_dict
+    from utils.session_state_utils import safe_get_session_state
+    
+    st.subheader(f"{title_prefix} Trials - Interventions & Conditions Analysis")
+    
+    # Get the list of filtered trial IDs
+    filtered_nct_ids = filtered_df['nct_id'].tolist()
+    
+    if not filtered_nct_ids:
+        st.warning("No trials match the current filters.")
+        return
+    
+    # Fetch or filter conditions data
+    if conditions_dict is None:
+        with st.spinner("Loading conditions data..."):
+            conditions_df = fetch_conditions_for_trials(conn, filtered_nct_ids)
+            if conditions_df is not None and not conditions_df.empty:
+                conditions_dict = build_conditions_dict(conditions_df)
+            else:
+                conditions_dict = {}
+    else:
+        # Filter existing conditions_dict to include only filtered trials
+        conditions_dict = {nct_id: conditions for nct_id, conditions in conditions_dict.items() 
+                         if nct_id in filtered_nct_ids}
+    
+    # Fetch or filter interventions data
+    if interventions_df is None:
+        with st.spinner("Loading interventions data..."):
+            interventions_df = fetch_interventions_for_trials(conn, filtered_nct_ids)
+    else:
+        # Filter existing interventions_df to include only filtered trials
+        interventions_df = interventions_df[interventions_df['nct_id'].isin(filtered_nct_ids)]
+    
+    # Create tabs for different visualizations
+    tabs = st.tabs([
+        "Intervention Types", 
+        "Top Conditions", 
+        "Conditions Network", 
+        "Interventions by Condition"
+    ])
+    
+    with tabs[0]:
+        st.write("### Intervention Types Distribution")
+        if interventions_df is not None and not interventions_df.empty:
+            fig_intervention = plot_intervention_distribution(interventions_df)
+            st.plotly_chart(fig_intervention, use_container_width=True)
+            
+            # Summary statistics for interventions
+            int_counts = count_intervention_types(interventions_df)
+            
+            # Create columns for intervention stats
+            cols = st.columns(min(len(int_counts), 4))
+            for i, (int_type, count) in enumerate(sorted(int_counts.items(), key=lambda x: x[1], reverse=True)):
+                if i < len(cols):
+                    cols[i].metric(f"{int_type}", count)
+        else:
+            st.info("No intervention data available for the selected trials.")
+    
+    with tabs[1]:
+        st.write("### Top Conditions")
+        if conditions_dict:
+            # Add radio button to choose visualization style
+            viz_style = st.radio(
+                "Visualization Style:",
+                ["Split by Category", "Combined"],
+                horizontal=True,
+                key="conditions_viz_style"
+            )
+            
+            # Get top conditions for display
+            top_n_conditions = st.slider(
+                "Number of Top Conditions Per Category",
+                min_value=5,
+                max_value=20,
+                value=10,
+                key="top_conditions_count"
+            )
+            
+            fig_conditions = plot_top_conditions(
+                conditions_dict, 
+                limit=top_n_conditions, 
+                by_category=(viz_style == "Split by Category")
+            )
+            
+            if fig_conditions:
+                st.plotly_chart(fig_conditions, use_container_width=True)
+                
+                # Show condition classification stats
+                all_conditions_df = count_top_conditions(conditions_dict, by_category=True)
+                oncology_count = len(all_conditions_df[all_conditions_df['category'] == 'Oncology'])
+                other_count = len(all_conditions_df[all_conditions_df['category'] == 'Other'])
+                total_count = len(all_conditions_df)
+                
+                # Display stats in columns
+                cols = st.columns(3)
+                cols[0].metric("Total Unique Conditions", total_count)
+                cols[1].metric("Oncology Conditions", oncology_count, 
+                              f"{oncology_count/total_count:.1%}" if total_count > 0 else "0%")
+                cols[2].metric("Other Conditions", other_count,
+                              f"{other_count/total_count:.1%}" if total_count > 0 else "0%")
+            else:
+                st.warning("Could not create conditions visualization.")
+        else:
+            st.info("No condition data available for the selected trials.")
+    
+    with tabs[2]:
+        st.write("### Conditions Co-occurrence Network")
+        if conditions_dict:
+            st.info("This network shows conditions that frequently appear together in trials. Nodes are colored by category - red for Oncology and blue for Other conditions.")
+            
+            # Check if networkx is installed
+            try:
+                import networkx
+                
+                # Add slider for minimum co-occurrence
+                min_co_occurrence = st.slider(
+                    "Minimum Co-occurrence Threshold",
+                    min_value=1,
+                    max_value=10,
+                    value=2,
+                    help="Minimum number of times conditions must co-occur to be included in the network"
+                )
+                
+                fig_network = plot_conditions_network(conditions_dict, min_co_occurrence)
+                if fig_network:
+                    st.plotly_chart(fig_network, use_container_width=True)
+                else:
+                    st.info(f"No conditions co-occur at least {min_co_occurrence} times in the selected trials.")
+            except ImportError:
+                st.error("The networkx library is required for the conditions network visualization.")
+                st.info("Please install networkx with: `pip install networkx` and restart the application.")
+                
+                # Display alternative visualization - simple co-occurrence matrix
+                st.write("### Top Condition Co-occurrences (Alternative View)")
+                
+                # Count co-occurrences
+                co_occurrences = {}
+                for conditions in conditions_dict.values():
+                    if len(conditions) > 1:
+                        for i, cond1 in enumerate(conditions):
+                            for cond2 in conditions[i+1:]:
+                                pair = tuple(sorted([cond1, cond2]))
+                                if pair in co_occurrences:
+                                    co_occurrences[pair] += 1
+                                else:
+                                    co_occurrences[pair] = 1
+                
+                # Show top co-occurrences as a table
+                if co_occurrences:
+                    co_occur_df = pd.DataFrame([
+                        {
+                            "Condition 1": pair[0], 
+                            "Category 1": classify_condition(pair[0]),
+                            "Condition 2": pair[1], 
+                            "Category 2": classify_condition(pair[1]),
+                            "Co-occurrences": count
+                        }
+                        for pair, count in sorted(co_occurrences.items(), key=lambda x: x[1], reverse=True)[:15]
+                    ])
+                    st.dataframe(co_occur_df, use_container_width=True)
+                else:
+                    st.info("No condition co-occurrences found in the selected trials.")
+        else:
+            st.info("No condition data available for the selected trials.")
+    
+    with tabs[3]:
+        st.write("### Interventions by Condition")
+        if conditions_dict and interventions_df is not None and not interventions_df.empty:
+            # Add slider for number of top conditions
+            top_n = st.slider(
+                "Number of Top Conditions per Category",
+                min_value=5,
+                max_value=20,
+                value=8,
+                help="Number of top conditions per category to include in the heatmap",
+                key="heatmap_conditions_count"
+            )
+            
+            # Use improved heatmap function that colors condition names by category
+            fig_heatmap = plot_interventions_by_condition(
+                interventions_df, 
+                conditions_dict,
+                top_n
+            )
+            
+            if fig_heatmap:
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+                
+                st.info("Conditions are color-coded: red for Oncology and blue for Other conditions.")
+                
+                # Add summary of intervention types by category
+                st.write("### Intervention Types by Condition Category")
+                
+                # Prepare data
+                interventions_by_category = {}
+                
+                # Create mapping of nct_id to intervention types
+                nct_to_interventions = {}
+                for _, row in interventions_df.iterrows():
+                    if row['nct_id'] not in nct_to_interventions:
+                        nct_to_interventions[row['nct_id']] = []
+                    nct_to_interventions[row['nct_id']].append(row['intervention_type'])
+                
+                for nct_id, intervention_types in nct_to_interventions.items():
+                    if nct_id in filtered_nct_ids and nct_id in conditions_dict:
+                        trial_conditions = conditions_dict[nct_id]
+                        for condition in trial_conditions:
+                            category = classify_condition(condition)
+                            if category not in interventions_by_category:
+                                interventions_by_category[category] = Counter()
+                            interventions_by_category[category].update(intervention_types)
+                
+                # Create data for bar chart
+                categories = []
+                intervention_types = []
+                counts = []
+                
+                for category, counter in interventions_by_category.items():
+                    for int_type, count in counter.items():
+                        categories.append(category)
+                        intervention_types.append(int_type)
+                        counts.append(count)
+                
+                chart_df = pd.DataFrame({
+                    'Category': categories,
+                    'InterventionType': intervention_types,
+                    'Count': counts
+                })
+                
+                if not chart_df.empty:
+                    # Create grouped bar chart
+                    fig = px.bar(
+                        chart_df,
+                        x='InterventionType',
+                        y='Count',
+                        color='Category',
+                        barmode='group',
+                        title='Intervention Types by Condition Category',
+                        color_discrete_map={'Oncology': '#FF4136', 'Other': '#0074D9'}
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Insufficient data for intervention-condition heatmap.")
+        else:
+            st.info("Condition and intervention data are required for this visualization.")

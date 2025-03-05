@@ -6,6 +6,7 @@ from utils.database_utils import (
     connect_to_database,
     fetch_conditions_for_trials,
     fetch_keywords_for_trials,
+    fetch_interventions_for_trials,
     fetch_facilities_for_trials,
     prepare_city_data,
     build_conditions_dict,
@@ -31,7 +32,8 @@ from utils.visualization_utils import (
     render_city_visualization_normalized,
     render_summary_metrics,
     render_trial_details,
-    render_province_visualization
+    render_province_visualization,
+    render_interventions_conditions_analysis
 )
 
 from utils.api_utils import (
@@ -237,12 +239,11 @@ def main():
                 render_summary_metrics(filtered_df)
                 
                 # Create tabs for different sections
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                tab1, tab2, tab3, tab4, tab5 = st.tabs([
                     "Trial List", 
                     "Charts", 
-                    "Canada Map", 
-                    "Population-Normalized Map",
-                    "Province Distribution", 
+                    "Geographic Distribution", 
+                    "Interventions and Conditions", 
                     "Trial Details"
                 ])
 
@@ -286,15 +287,23 @@ def main():
                     # only uses facilities for the filtered trials
                     render_city_visualization(filtered_df, conn)
 
-                with tab4:
                     # Use the population-normalized visualization
                     render_city_visualization_normalized(filtered_df, conn)
 
-                with tab5:
                     # Add province distribution visualization
                     render_province_visualization(filtered_df, conn, title_prefix="Adult")
-                                    
-                with tab6:
+                    
+                with tab4:
+                    # Add interventions and conditions analysis
+                    render_interventions_conditions_analysis(
+                        filtered_df, 
+                        conn, 
+                        title_prefix="Adult",
+                        conditions_dict=safe_get_session_state('adult_conditions_dict', {}),
+                        interventions_df=fetch_interventions_for_trials(conn, filtered_df['nct_id'].tolist())
+                    )
+                         
+                with tab5:
                     st.subheader("Trial Details")
                     
                     # Use the utility function to render trial details
