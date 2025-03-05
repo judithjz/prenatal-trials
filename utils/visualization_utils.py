@@ -1306,4 +1306,297 @@ def render_trial_details(df: pd.DataFrame, conn, keywords_dict=None, conditions_
         
         # Link to ClinicalTrials.gov
         st.markdown(f"[View on ClinicalTrials.gov](https://clinicaltrials.gov/study/{selected_trial})")
+
+# Canadian provinces and territories mapping
+PROVINCE_MAPPING = {
+    'ON': 'Ontario',
+    'QC': 'Quebec',
+    'BC': 'British Columbia',
+    'AB': 'Alberta',
+    'MB': 'Manitoba',
+    'SK': 'Saskatchewan',
+    'NS': 'Nova Scotia',
+    'NB': 'New Brunswick',
+    'NL': 'Newfoundland and Labrador',
+    'PE': 'Prince Edward Island',
+    'NT': 'Northwest Territories',
+    'YT': 'Yukon',
+    'NU': 'Nunavut',
+    # Common city to province mappings for data cleanup
+    'toronto': 'Ontario',
+    'ottawa': 'Ontario',
+    'mississauga': 'Ontario',
+    'hamilton': 'Ontario',
+    'london': 'Ontario',
+    'markham': 'Ontario',
+    'vaughan': 'Ontario',
+    'kitchener': 'Ontario',
+    'windsor': 'Ontario',
+    'greater toronto area': 'Ontario',
+    
+    'montreal': 'Quebec',
+    'quebec city': 'Quebec',
+    'quebec': 'Quebec',
+    'laval': 'Quebec',
+    'gatineau': 'Quebec',
+    'sherbrooke': 'Quebec',
+    
+    'vancouver': 'British Columbia',
+    'victoria': 'British Columbia',
+    'burnaby': 'British Columbia',
+    'richmond': 'British Columbia',
+    'surrey': 'British Columbia',
+    'kelowna': 'British Columbia',
+    'metro vancouver': 'British Columbia',
+    
+    'calgary': 'Alberta',
+    'edmonton': 'Alberta',
+    'red deer': 'Alberta',
+    'lethbridge': 'Alberta',
+    
+    'winnipeg': 'Manitoba',
+    
+    'saskatoon': 'Saskatchewan',
+    'regina': 'Saskatchewan',
+    
+    'halifax': 'Nova Scotia',
+    
+    'saint john': 'New Brunswick',
+    'st. john': 'New Brunswick',
+    'moncton': 'New Brunswick',
+    'fredericton': 'New Brunswick',
+    
+    "st. john's": 'Newfoundland and Labrador',
+    
+    'charlottetown': 'Prince Edward Island'
+}
+
+# Province population data (2021 census)
+PROVINCE_POPULATIONS = {
+    'Ontario': 14223942,
+    'Quebec': 8501833,
+    'British Columbia': 5000879,
+    'Alberta': 4262635,
+    'Manitoba': 1342153,
+    'Saskatchewan': 1132505,
+    'Nova Scotia': 969383,
+    'New Brunswick': 775610,
+    'Newfoundland and Labrador': 510550,
+    'Prince Edward Island': 154331,
+    'Northwest Territories': 41070,
+    'Yukon': 40232,
+    'Nunavut': 36858
+}
+
+def get_province_from_city(city: str) -> str:
+    """
+    Get province name from city name using the PROVINCE_MAPPING dictionary.
+    
+    Args:
+        city: Normalized city name
+        
+    Returns:
+        Province name or "Unknown" if city not found
+    """
+    # Normalize city name
+    norm_city = normalize_city_name(city, apply_metro_mapping=True).lower()
+    
+    # Check if city is in the mapping
+    if norm_city in PROVINCE_MAPPING:
+        return PROVINCE_MAPPING[norm_city]
+    
+    # Check if city contains a province abbreviation
+    for abbr, province in PROVINCE_MAPPING.items():
+        if len(abbr) == 2 and f", {abbr.lower()}" in norm_city:
+            return province
+    
+    return "Unknown"
+
+def process_trials_by_province(facilities_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Process facilities data to get trial counts by province.
+    
+    Args:
+        facilities_df: DataFrame containing facility information with 'city' and 'nct_id' columns
+        
+    Returns:
+        DataFrame with province-level aggregation of trial counts
+    """
+    if facilities_df.empty or 'city' not in facilities_df.columns or 'nct_id' not in facilities_df.columns:
+        return pd.DataFrame()
+    
+    # Create a copy to avoid modifying the original DataFrame
+    df = facilities_df.copy()
+    
+    # Add a normalized city column to the facilities data
+    df['norm_city'] = df['city'].apply(lambda x: normalize_city_name(x, apply_metro_mapping=True))
+    
+    # Add province based on the city
+    df['province'] = df['norm_city'].apply(get_province_from_city)
+    
+    # Count unique trials by province
+    province_counts = df.groupby('province')['nct_id'].nunique().reset_index()
+    province_counts.columns = ['province', 'trial_count']
+    
+    # Sort by trial count in descending order
+    province_counts = province_counts.sort_values('trial_count', ascending=False)
+    
+    # Add population data
+    province_counts['population'] = province_counts['province'].map(PROVINCE_POPULATIONS)
+    
+    # Calculate trials per 100,000 residents
+    province_counts['trials_per_100k'] = (
+        province_counts['trial_count'] / province_counts['population'] * 100000
+    ).round(2)
+    
+    return province_counts
+
+def plot_province_distribution(province_counts: pd.DataFrame, title_prefix: str = "Clinical") -> Tuple[px.bar, px.bar]:
+    """
+    Create bar charts showing the distribution of trials across Canadian provinces.
+    
+    Args:
+        province_counts: DataFrame with province-level aggregation of trial counts
+        title_prefix: Prefix for chart titles (e.g., "Pediatric", "Adult", "Clinical")
+        
+    Returns:
+        Tuple of (count bar chart, normalized bar chart)
+    """
+    if province_counts.empty:
+        return None, None
+    
+    # Filter out "Unknown" province
+    province_counts_filtered = province_counts[province_counts['province'] != "Unknown"].copy()
+    
+    if province_counts_filtered.empty:
+        return None, None
+    
+    # Sort for visualization
+    province_counts_by_count = province_counts_filtered.sort_values('trial_count', ascending=True)
+    province_counts_by_normalized = province_counts_filtered.sort_values('trials_per_100k', ascending=True)
+    
+    # Create bar chart of raw counts
+    fig_count = px.bar(
+        province_counts_by_count,
+        y='province',
+        x='trial_count',
+        orientation='h',
+        title=f'{title_prefix} Trials by Province in Canada',
+        labels={'province': 'Province', 'trial_count': 'Number of Trials'},
+        color='trial_count',
+        color_continuous_scale='Viridis',
+    )
+    fig_count.update_layout(
+        height=max(400, len(province_counts_by_count) * 30),
+        xaxis_title="Number of Trials",
+        yaxis_title="Province",
+        yaxis={'categoryorder': 'total ascending'},
+        template="plotly_white"
+    )
+    
+    # Create bar chart of population-normalized counts
+    fig_normalized = px.bar(
+        province_counts_by_normalized,
+        y='province',
+        x='trials_per_100k',
+        orientation='h',
+        title=f'{title_prefix} Trials per 100,000 Residents by Province in Canada',
+        labels={'province': 'Province', 'trials_per_100k': 'Trials per 100,000 Residents'},
+        color='trials_per_100k',
+        color_continuous_scale='Viridis',
+        text='trial_count'
+    )
+    fig_normalized.update_layout(
+        height=max(400, len(province_counts_by_normalized) * 30),
+        xaxis_title="Trials per 100,000 Residents",
+        yaxis_title="Province",
+        yaxis={'categoryorder': 'total ascending'},
+        template="plotly_white"
+    )
+    fig_normalized.update_traces(
+        texttemplate='%{text} trials',
+        textposition='outside'
+    )
+    
+    return fig_count, fig_normalized
+
+def render_province_visualization(filtered_df: pd.DataFrame, conn: any, title_prefix: str = "Clinical"):
+    """
+    Render the province visualization section with bar charts and summary metrics.
+    
+    Args:
+        filtered_df: DataFrame with filtered trial data
+        conn: Database connection for fetching additional data if needed
+        title_prefix: Prefix for chart titles (e.g., "Pediatric", "Adult", "Clinical")
+    """
+    # Import the database utility function to avoid circular imports
+    from utils.database_utils import fetch_facilities_for_trials
+    
+    st.subheader("Distribution by Province")
+    
+    # Get the list of filtered trial IDs
+    filtered_nct_ids = filtered_df['nct_id'].tolist()
+    
+    if not filtered_nct_ids:
+        st.warning("No trials match the current filters.")
+        return
+    
+    # Fetch facilities data for the filtered trials
+    with st.spinner("Loading province data..."):
+        filtered_facilities_df = fetch_facilities_for_trials(conn, filtered_nct_ids)
+    
+    if filtered_facilities_df is not None and not filtered_facilities_df.empty:
+        # Process data by province
+        province_counts = process_trials_by_province(filtered_facilities_df)
+        
+        if not province_counts.empty:
+            # Display summary metrics for provinces
+            provinces_with_trials = len(province_counts[province_counts['province'] != "Unknown"])
+            total_trials = province_counts['trial_count'].sum()
+            
+            # Display metrics in columns
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Provinces/Territories with Trials", provinces_with_trials)
+            with col2:
+                st.metric("Total Trials with Province Data", total_trials)
+            
+            # Show unknown trials if any
+            unknown_row = province_counts[province_counts['province'] == "Unknown"]
+            if not unknown_row.empty and unknown_row['trial_count'].iloc[0] > 0:
+                st.warning(f"{unknown_row['trial_count'].iloc[0]} trials could not be mapped to a specific province.")
+            
+            # Create and display visualizations
+            fig_count, fig_normalized = plot_province_distribution(province_counts, title_prefix)
+            
+            if fig_count and fig_normalized:
+                st.plotly_chart(fig_count, use_container_width=True)
+                st.plotly_chart(fig_normalized, use_container_width=True)
+                
+                # Show data table
+                with st.expander("Show Province Data Table", expanded=False):
+                    table_data = province_counts.sort_values('trial_count', ascending=False).copy()
+                    table_data = table_data[table_data['province'] != "Unknown"]
+                    
+                    # Add percentage column
+                    total_mapped_trials = table_data['trial_count'].sum()
+                    table_data['percentage'] = (table_data['trial_count'] / total_mapped_trials * 100).round(1)
+                    
+                    # Reorder and rename columns
+                    table_data = table_data[['province', 'trial_count', 'percentage', 'population', 'trials_per_100k']]
+                    table_data.columns = [
+                        'Province', 
+                        'Number of Trials', 
+                        'Percentage of Trials (%)',
+                        'Population', 
+                        'Trials per 100,000 Residents'
+                    ]
+                    
+                    st.dataframe(table_data, use_container_width=True)
+            else:
+                st.warning("Could not create province visualizations.")
+        else:
+            st.warning("No province data available for the selected trials.")
+    else:
+        st.warning("No facility data available for province analysis.")
         

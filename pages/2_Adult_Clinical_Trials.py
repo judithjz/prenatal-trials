@@ -30,7 +30,8 @@ from utils.visualization_utils import (
     render_city_visualization,
     render_city_visualization_normalized,
     render_summary_metrics,
-    render_trial_details
+    render_trial_details,
+    render_province_visualization
 )
 
 from utils.api_utils import (
@@ -236,7 +237,14 @@ def main():
                 render_summary_metrics(filtered_df)
                 
                 # Create tabs for different sections
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(["Trial List", "Charts", "Canada Map", "Population-Normalized Map", "Trial Details"])
+                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                    "Trial List", 
+                    "Charts", 
+                    "Canada Map", 
+                    "Population-Normalized Map",
+                    "Province Distribution", 
+                    "Trial Details"
+                ])
 
                 with tab1:
                     st.subheader("Adult Clinical Trials")
@@ -281,8 +289,12 @@ def main():
                 with tab4:
                     # Use the population-normalized visualization
                     render_city_visualization_normalized(filtered_df, conn)
-                    
+
                 with tab5:
+                    # Add province distribution visualization
+                    render_province_visualization(filtered_df, conn, title_prefix="Adult")
+                                    
+                with tab6:
                     st.subheader("Trial Details")
                     
                     # Use the utility function to render trial details
