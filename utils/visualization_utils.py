@@ -1520,7 +1520,7 @@ def plot_interventions_by_condition(interventions_df: pd.DataFrame,
                                    top_n: int = 10) -> Optional[go.Figure]:
     """
     Create a heatmap showing the relationship between top conditions and intervention types,
-    with condition categories indicated by colored markers.
+    with condition categories indicated by prefixes in the condition labels.
     
     Args:
         interventions_df: DataFrame with intervention data
@@ -1574,8 +1574,14 @@ def plot_interventions_by_condition(interventions_df: pd.DataFrame,
             counter = condition_intervention_counts[condition]
             row = [counter.get(int_type, 0) for int_type in all_intervention_types]
             heatmap_data.append(row)
-            condition_labels.append(condition)
-            categories.append('Oncology' if condition in oncology_top else 'Other')
+            
+            # Add category prefix to condition labels - this replaces the need for a separate legend
+            if condition in oncology_top:
+                condition_labels.append("🔴 " + condition)  # Red circle for Oncology
+                categories.append('Oncology')
+            else:
+                condition_labels.append("🔵 " + condition)  # Blue circle for Other
+                categories.append('Other')
     
     if not heatmap_data:
         return None
@@ -1586,10 +1592,7 @@ def plot_interventions_by_condition(interventions_df: pd.DataFrame,
         customdata.append([category] * len(all_intervention_types))
     
     # Create heatmap
-    fig = go.Figure()
-    
-    # Add the heatmap
-    fig.add_trace(go.Heatmap(
+    fig = go.Figure(data=go.Heatmap(
         z=heatmap_data,
         x=all_intervention_types,
         y=condition_labels,
@@ -1598,63 +1601,27 @@ def plot_interventions_by_condition(interventions_df: pd.DataFrame,
         hovertemplate='<b>Condition:</b> %{y}<br><b>Intervention:</b> %{x}<br><b>Count:</b> %{z}<br><b>Category:</b> %{customdata}<extra></extra>'
     ))
     
-    # Add category markers next to condition names
-    # Use a separate scatter trace with markers for categories
-    y_positions = list(range(len(condition_labels)))
+    # Add a title annotation that explains the category indicators
+    fig.add_annotation(
+        xref="paper", yref="paper",
+        x=0.5, y=1.05,
+        text="🔴 Oncology conditions | 🔵 Other conditions",
+        showarrow=False,
+        font=dict(size=12),
+        align="center",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        bordercolor="rgba(0, 0, 0, 0.3)",
+        borderwidth=1,
+        borderpad=4
+    )
     
-    # Oncology markers (red)
-    oncology_y = [y for y, cat in zip(y_positions, categories) if cat == 'Oncology']
-    if oncology_y:
-        fig.add_trace(go.Scatter(
-            x=[-0.5] * len(oncology_y),  # Position to the left of y-axis
-            y=[condition_labels[i] for i in oncology_y],
-            mode='markers',
-            marker=dict(
-                symbol='circle',
-                color='#FF4136',  # Red for Oncology
-                size=8
-            ),
-            name='Oncology',
-            hoverinfo='name',
-            showlegend=True
-        ))
-    
-    # Other markers (blue)
-    other_y = [y for y, cat in zip(y_positions, categories) if cat == 'Other']
-    if other_y:
-        fig.add_trace(go.Scatter(
-            x=[-0.5] * len(other_y),  # Position to the left of y-axis
-            y=[condition_labels[i] for i in other_y],
-            mode='markers',
-            marker=dict(
-                symbol='circle',
-                color='#0074D9',  # Blue for Other
-                size=8
-            ),
-            name='Other',
-            hoverinfo='name',
-            showlegend=True
-        ))
-    
-    # Set layout with improved margins for the legend and title
+    # Set layout with improved margins
     fig.update_layout(
         title='Intervention Types by Top Conditions',
         xaxis_title='Intervention Type',
         yaxis_title='Condition',
         height=max(500, len(condition_labels) * 25),
-        margin=dict(l=10, r=50, t=50, b=50),
-        legend=dict(
-            title="Condition Category",
-            yanchor="top",
-            y=0.99,
-            xanchor="right",
-            x=1.1
-        ),
-        # Hide x-axis value for the markers
-        xaxis=dict(
-            range=[-0.7, len(all_intervention_types) - 0.3],  # Extend x-axis to show markers
-            showgrid=True
-        )
+        margin=dict(l=10, r=50, t=80, b=50),  # Increased top margin for annotation
     )
     
     return fig
@@ -1854,7 +1821,7 @@ def render_interventions_conditions_analysis(filtered_df: pd.DataFrame,
                 key="heatmap_conditions_count"
             )
             
-            # Use improved heatmap function that colors condition names by category
+            # Use improved heatmap function that embeds category indicators in condition labels
             fig_heatmap = plot_interventions_by_condition(
                 interventions_df, 
                 conditions_dict,
@@ -1863,8 +1830,6 @@ def render_interventions_conditions_analysis(filtered_df: pd.DataFrame,
             
             if fig_heatmap:
                 st.plotly_chart(fig_heatmap, use_container_width=True)
-                
-                st.info("Conditions are color-coded: red for Oncology and blue for Other conditions.")
                 
                 # Add summary of intervention types by category
                 st.write("### Intervention Types by Condition Category")
