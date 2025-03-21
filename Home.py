@@ -78,6 +78,24 @@ def main():
         
         if st.button("Go to Rare Disease Trials", key="rare_trials_button", use_container_width=True):
             st.switch_page("pages/3_Rare_Disease_Trials.py")
+            
+        st.markdown("---")
+        
+        st.markdown("""
+        ### 🌍 Global Clinical Trials Comparison
+        
+        Compare clinical trial activity across different countries around the world.
+        
+        Features:
+        - Visualize trial counts across top countries globally
+        - Explore geographic distribution with interactive maps
+        - Compare pediatric vs. adult trial proportions by country
+        - Analyze trial phase and status distributions internationally
+        - Track clinical trial trends over time by country
+        """)
+        
+        if st.button("Go to Global Comparison", key="global_button", use_container_width=True):
+            st.switch_page("pages/5_Global_Clinical_Trials_Comparison.py")
     
     with col2:
         st.markdown("""
@@ -91,30 +109,6 @@ def main():
         - Explore geographic distribution with population-normalization
         - View detailed trial information and metadata
         - Analyze intervention and condition patterns
-        """)
-        
-        if st.button("Go to Adult Trials", key="adult_button", use_container_width=True):
-            st.switch_page("pages/2_Adult_Clinical_Trials.py")
-            
-        st.markdown("---")
-        
-        st.markdown("""
-        ### ℹ️ About This Application
-        
-        This application connects to the AACT (Aggregate Analysis of ClinicalTrials.gov) database,
-        which provides comprehensive data on clinical trials registered on ClinicalTrials.gov.
-        
-        **Key Features:**
-        - **Metropolitan Area Analysis**: Consolidates cities within the Greater Toronto Area and Metro Vancouver
-        - **Population-Normalized Metrics**: Visualizes trial density per 100,000 residents
-        - **AI-Powered Classification**: Uses Anthropic's Claude to identify rare disease trials
-        - **Advanced Data Visualization**: Interactive charts, maps, and network diagrams
-        
-        **Technologies:**
-        - Streamlit for the web interface
-        - Plotly for interactive visualizations
-        - NetworkX for condition network analysis
-        - Anthropic's Claude AI for rare disease classification
         """)
     
     # Footer

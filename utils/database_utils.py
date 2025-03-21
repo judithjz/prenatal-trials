@@ -4,102 +4,111 @@ This module handles all database interactions and query operations.
 """
 
 import streamlit as st
-import psycopg2
 import pandas as pd
 import re
+import logging
+import os
 from typing import Dict, List, Optional, Tuple, Union, Any
 from functools import wraps
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-def connect_to_database() -> Optional[psycopg2.extensions.connection]:
+def connect_to_database() -> Optional[Engine]:
     """
-    Establish connection to the AACT database using credentials from Streamlit secrets.
+    Create a SQLAlchemy engine for database connection.
     
     Returns:
-        Database connection object or None if connection fails
+        SQLAlchemy engine or None if connection fails
     """
-    # Access the secrets
-    db_secrets = st.secrets["database"]
-    
     try:
-        conn = psycopg2.connect(
-            host=db_secrets["host"],
-            port=db_secrets["port"],
-            dbname=db_secrets["dbname"],
-            user=db_secrets["user"],
-            password=db_secrets["password"]
-        )
-        return conn
+        # Try to access secrets, fall back to environment variables if not available
+        try:
+            # Check if st.secrets is available
+            db_secrets = st.secrets["database"]
+            
+            host = db_secrets["host"]
+            port = db_secrets["port"]
+            dbname = db_secrets["dbname"]
+            user = db_secrets["user"]
+            password = db_secrets["password"]
+        except (KeyError, AttributeError):
+            # Fall back to environment variables
+            host = os.getenv('DB_HOST')
+            port = os.getenv('DB_PORT')
+            dbname = os.getenv('DB_NAME')
+            user = os.getenv('DB_USER')
+            password = os.getenv('DB_PASSWORD')
+        
+        # Create SQLAlchemy engine
+        db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        # Test connection - create a connection first, then use as context manager
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            conn.commit()
+            
+        return engine
     except Exception as e:
-        st.error(f"Error connecting to the database: {e}")
+        st.error("Unable to connect to database. Please check your connection settings.")
+        logging.error(f"Database connection error: {e}")
         return None
 
 
 def handle_database_query(query_function, *args, error_message="Error executing database query", **kwargs):
     """
     Execute a database query with proper error handling.
-    
-    Args:
-        query_function: Function that executes a database query
-        *args: Arguments to pass to the query function
-        error_message: Custom error message to display if the query fails
-        **kwargs: Keyword arguments to pass to the query function
-        
-    Returns:
-        Result of the query function or None if an error occurs
     """
     try:
         result = query_function(*args, **kwargs)
         return result
     except Exception as e:
-        st.error(f"{error_message}: {str(e)}")
-        # Log the error for debugging
-        print(f"Database error in {query_function.__name__}: {str(e)}")
+        # Log the detailed error for debugging but don't show to users
+        logging.error(f"Database error in {query_function.__name__}: {str(e)}")
+        
+        # Show a sanitized message to users
+        st.error(f"{error_message}")
         return None
 
 
 @st.cache_data(ttl=3600)  # Cache for one hour
-def fetch_pediatric_trials_in_canada(_conn: psycopg2.extensions.connection) -> pd.DataFrame:
+def fetch_pediatric_trials_in_canada(_engine: Engine) -> pd.DataFrame:
     """
-    Fetch data for clinical trials that:
-    1. Have at least one site in Canada (from facilities table)
-    2. Include participants with minimum age < 18 years
-    
-    This is the base query that will be used across all pages of the app.
-    
-    Args:
-        conn: Database connection object
-        
-    Returns:
-        DataFrame containing pediatric trial data
+    Fetch data for clinical trials
     """
-    query = """
-    SELECT DISTINCT
-        s.nct_id,
-        s.brief_title,
-        s.official_title,
-        s.overall_status,
-        e.minimum_age,
-        s.phase,
-        s.study_type,
-        s.start_date,
-        bs.description as brief_summary,
-        dd.description as detailed_description,
-        COUNT(DISTINCT f.id) AS num_canadian_sites
-    FROM ctgov.studies s
-    JOIN ctgov.facilities f ON s.nct_id = f.nct_id
-    JOIN ctgov.eligibilities e ON s.nct_id = e.nct_id
-    LEFT JOIN ctgov.brief_summaries bs ON s.nct_id = bs.nct_id
-    LEFT JOIN ctgov.detailed_descriptions dd ON s.nct_id = dd.nct_id
-    WHERE f.country = 'Canada'
-    GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status, 
-             e.minimum_age, s.phase, s.study_type, s.start_date, 
-             bs.description, dd.description
-    ORDER BY s.start_date DESC;
-    """
-    
     try:
-        df = pd.read_sql_query(query, _conn)
+        query = """
+        SELECT DISTINCT
+            s.nct_id,
+            s.brief_title,
+            s.official_title,
+            s.overall_status,
+            e.minimum_age,
+            s.phase,
+            s.study_type,
+            s.start_date,
+            bs.description as brief_summary,
+            dd.description as detailed_description,
+            COUNT(DISTINCT f.id) AS num_canadian_sites
+        FROM ctgov.studies s
+        JOIN ctgov.facilities f ON s.nct_id = f.nct_id
+        JOIN ctgov.eligibilities e ON s.nct_id = e.nct_id
+        LEFT JOIN ctgov.brief_summaries bs ON s.nct_id = bs.nct_id
+        LEFT JOIN ctgov.detailed_descriptions dd ON s.nct_id = dd.nct_id
+        WHERE f.country = 'Canada'
+        GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status, 
+                 e.minimum_age, s.phase, s.study_type, s.start_date, 
+                 bs.description, dd.description
+        ORDER BY s.start_date DESC;
+        """
+        
+        # Use SQLAlchemy engine
+        df = pd.read_sql_query(text(query), _engine)
         
         # Parse minimum age to months for filtering
         df['age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
@@ -113,7 +122,8 @@ def fetch_pediatric_trials_in_canada(_conn: psycopg2.extensions.connection) -> p
         
         return pediatric_df
     except Exception as e:
-        st.error(f"Error fetching pediatric trials data: {e}")
+        st.error("Error fetching data")
+        logging.error(f"Database error: {str(e)}")
         return pd.DataFrame()
 
 
@@ -160,12 +170,12 @@ def parse_age_to_months(age_str: Optional[str]) -> Optional[float]:
 
 
 @st.cache_data(ttl=3600)
-def fetch_conditions_for_trials(_conn: psycopg2.extensions.connection, nct_ids: List[str]) -> pd.DataFrame:
+def fetch_conditions_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataFrame:
     """
     Fetch conditions for the specified trial IDs.
     
     Args:
-        conn: Database connection object
+        _engine: SQLAlchemy engine
         nct_ids: List of NCT IDs to fetch conditions for
         
     Returns:
@@ -174,29 +184,29 @@ def fetch_conditions_for_trials(_conn: psycopg2.extensions.connection, nct_ids: 
     if not nct_ids:
         return pd.DataFrame()
     
-    placeholders = ', '.join(['%s'] * len(nct_ids))
-    query = f"""
-    SELECT nct_id, name
-    FROM ctgov.conditions
-    WHERE nct_id IN ({placeholders})
-    ORDER BY nct_id;
-    """
-    
     try:
-        df = pd.read_sql_query(query, _conn, params=nct_ids)
+        query = text("""
+        SELECT nct_id, name
+        FROM ctgov.conditions
+        WHERE nct_id IN :nct_ids
+        ORDER BY nct_id;
+        """)
+        
+        df = pd.read_sql_query(query, _engine, params={"nct_ids": tuple(nct_ids)})
         return df
-    except Exception as e:
-        st.error(f"Error fetching conditions: {e}")
+    except SQLAlchemyError as e:
+        st.error(f"Error fetching conditions")
+        logging.error(f"Error fetching conditions: {e}")
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600)
-def fetch_keywords_for_trials(_conn: psycopg2.extensions.connection, nct_ids: List[str]) -> pd.DataFrame:
+def fetch_keywords_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataFrame:
     """
     Fetch keywords for the specified trial IDs.
     
     Args:
-        conn: Database connection object
+        _engine: SQLAlchemy engine
         nct_ids: List of NCT IDs to fetch keywords for
         
     Returns:
@@ -205,29 +215,29 @@ def fetch_keywords_for_trials(_conn: psycopg2.extensions.connection, nct_ids: Li
     if not nct_ids:
         return pd.DataFrame()
     
-    placeholders = ', '.join(['%s'] * len(nct_ids))
-    query = f"""
-    SELECT nct_id, name AS keyword
-    FROM ctgov.keywords
-    WHERE nct_id IN ({placeholders})
-    ORDER BY nct_id;
-    """
-    
     try:
-        df = pd.read_sql_query(query, _conn, params=nct_ids)
+        query = text("""
+        SELECT nct_id, name AS keyword
+        FROM ctgov.keywords
+        WHERE nct_id IN :nct_ids
+        ORDER BY nct_id;
+        """)
+        
+        df = pd.read_sql_query(query, _engine, params={"nct_ids": tuple(nct_ids)})
         return df
-    except Exception as e:
-        st.error(f"Error fetching keywords: {e}")
+    except SQLAlchemyError as e:
+        st.error(f"Error fetching keywords")
+        logging.error(f"Error fetching keywords: {e}")
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600)
-def fetch_interventions_for_trials(_conn: psycopg2.extensions.connection, nct_ids: List[str]) -> pd.DataFrame:
+def fetch_interventions_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataFrame:
     """
     Fetch interventions for the specified trial IDs.
     
     Args:
-        conn: Database connection object
+        _engine: SQLAlchemy engine
         nct_ids: List of NCT IDs to fetch interventions for
         
     Returns:
@@ -236,74 +246,61 @@ def fetch_interventions_for_trials(_conn: psycopg2.extensions.connection, nct_id
     if not nct_ids:
         return pd.DataFrame()
     
-    placeholders = ', '.join(['%s'] * len(nct_ids))
-    query = f"""
-    SELECT nct_id, intervention_type, name
-    FROM ctgov.interventions
-    WHERE nct_id IN ({placeholders})
-    ORDER BY nct_id;
-    """
-    
     try:
-        df = pd.read_sql_query(query, _conn, params=nct_ids)
+        query = text("""
+        SELECT nct_id, intervention_type, name
+        FROM ctgov.interventions
+        WHERE nct_id IN :nct_ids
+        ORDER BY nct_id;
+        """)
+        
+        df = pd.read_sql_query(query, _engine, params={"nct_ids": tuple(nct_ids)})
         return df
-    except Exception as e:
-        st.error(f"Error fetching interventions: {e}")
+    except SQLAlchemyError as e:
+        st.error(f"Error fetching interventions")
+        logging.error(f"Error fetching interventions: {e}")
         return pd.DataFrame()
 
+
 @st.cache_data(ttl=3600)
-def fetch_facilities_for_trials(_conn: psycopg2.extensions.connection, 
+def fetch_facilities_for_trials(_engine: Engine, 
                          nct_ids: Optional[List[str]] = None,
                          country: str = 'Canada',
                          pediatric_only: bool = True) -> pd.DataFrame:
     """
     Unified function to fetch facilities data with various filtering options.
-    
-    Args:
-        _conn: Database connection object
-        nct_ids: Optional list of NCT IDs to filter by
-        country: Country to filter facilities by (default: 'Canada')
-        pediatric_only: Whether to filter for pediatric trials only (default: True)
-        
-    Returns:
-        DataFrame with facility information
     """
-    # Build the WHERE clause based on parameters
-    where_conditions = [f"f.country = '{country}'", 
-                       "f.city IS NOT NULL", 
-                       "f.city != ''"]
-    
-    params = []
-    
-    # Add NCT IDs filter if provided
-    if nct_ids:
-        # FIX: Check if nct_ids is empty to avoid SQL errors
-        if len(nct_ids) == 0:
-            return pd.DataFrame()  # Return empty DataFrame if no NCT IDs
-            
-        placeholders = ', '.join(['%s'] * len(nct_ids))
-        where_conditions.append(f"s.nct_id IN ({placeholders})")
-        params.extend(nct_ids)
-    
-    # Construct the final WHERE clause
-    where_clause = " AND ".join(where_conditions)
-    
-    query = f"""
-    SELECT
-        s.nct_id,
-        f.city,
-        f.state,
-        f.country,
-        f.name as facility_name,
-        f.status as facility_status
-    FROM ctgov.studies s
-    JOIN ctgov.facilities f ON s.nct_id = f.nct_id
-    WHERE {where_clause}
-    ORDER BY s.nct_id, f.city;
-    """
-    
     try:
-        df = pd.read_sql_query(query, _conn, params=params)
+        # Start with a base query
+        base_query = """
+        SELECT
+            s.nct_id,
+            f.city,
+            f.state,
+            f.country,
+            f.name as facility_name,
+            f.status as facility_status
+        FROM ctgov.studies s
+        JOIN ctgov.facilities f ON s.nct_id = f.nct_id
+        WHERE f.country = :country AND f.city IS NOT NULL AND f.city != ''
+        """
+        
+        params = {"country": country}
+        
+        # Add NCT IDs filter if provided
+        if nct_ids:
+            if len(nct_ids) == 0:
+                return pd.DataFrame()
+                
+            base_query += " AND s.nct_id IN :nct_ids"
+            params["nct_ids"] = tuple(nct_ids)
+        
+        # Complete the query
+        base_query += " ORDER BY s.nct_id, f.city"
+        query = text(base_query)
+        
+        # Execute the query
+        df = pd.read_sql_query(query, _engine, params=params)
         
         # If pediatric only and we have a list of pediatric trial IDs, filter after query
         if pediatric_only and nct_ids:
@@ -311,14 +308,16 @@ def fetch_facilities_for_trials(_conn: psycopg2.extensions.connection,
             return df
         elif pediatric_only:
             # Get the list of pediatric trial IDs and filter the facilities
-            pediatric_trials = fetch_pediatric_trials_in_canada(_conn)
+            pediatric_trials = fetch_pediatric_trials_in_canada(_engine)
             pediatric_nct_ids = set(pediatric_trials['nct_id'].tolist())
             df = df[df['nct_id'].isin(pediatric_nct_ids)]
             
         return df
-    except Exception as e:
-        st.error(f"Error fetching facilities data: {e}")
+    except SQLAlchemyError as e:
+        st.error(f"Error fetching facilities data")
+        logging.error(f"Error fetching facilities data: {e}")
         return pd.DataFrame()
+
 
 def prepare_city_data(facilities_df: pd.DataFrame) -> pd.DataFrame:
     """

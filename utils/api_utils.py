@@ -8,42 +8,53 @@ import pandas as pd
 import base64
 import requests
 from typing import Dict, Any, Optional
+import time
+import os
 
 
-def get_download_link(df: pd.DataFrame, filename: str = "pediatric_trials.csv", button_text: str = "Download CSV") -> str:
-    """
-    Generate a download link for a DataFrame.
-    
-    Args:
-        df: DataFrame to download
-        filename: Name of the file to download
-        button_text: Text to display on the download button
+def get_download_link(df: pd.DataFrame, filename: str = "pediatric_trials.csv", 
+                     button_text: str = "Download CSV", max_size_mb: int = 10) -> str:
+    """Generate a download link for a DataFrame."""
+    # Validate inputs
+    if not isinstance(df, pd.DataFrame):
+        return "Error: Invalid DataFrame"
         
-    Returns:
-        HTML string containing the download link
-    """
+    # Validate filename to prevent directory traversal
+    safe_filename = os.path.basename(filename)
+    if not safe_filename or safe_filename != filename:
+        safe_filename = "data.csv"
+        
+    # Check size before encoding
     csv = df.to_csv(index=False)
+    size_mb = len(csv.encode()) / (1024 * 1024)
+    if size_mb > max_size_mb:
+        return f"Error: Data size ({size_mb:.1f}MB) exceeds maximum allowed size ({max_size_mb}MB)"
+    
+    # Encode and create link
     b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{button_text}</a>'
+    href = f'<a href="data:file/csv;base64,{b64}" download="{safe_filename}">{button_text}</a>'
     return href
 
 
 def classify_rare_disease(trial_data: Dict[str, Any], api_key: str) -> Dict[str, Any]:
-    """
-    Classify if a trial is for a rare disease using the Anthropic API.
+    """Classify if a trial is for a rare disease using the Anthropic API."""
+    # Check if we're exceeding rate limits
+    if not _check_rate_limit():
+        return {"success": False, "error": "Rate limit exceeded, please try again later"}
     
-    Args:
-        trial_data: Dictionary containing trial data
-        api_key: Anthropic API key
+    # Validate and sanitize inputs
+    if not isinstance(trial_data, dict):
+        return {"success": False, "error": "Invalid trial data format"}
         
-    Returns:
-        Dictionary containing classification results
-    """
-    if not api_key:
-        return {"success": False, "error": "Anthropic API key not provided"}
+    # Sanitize and truncate inputs to prevent prompt injection
+    def sanitize(text):
+        if not text or not isinstance(text, str):
+            return "Not provided"
+        # Truncate long text fields
+        return text[:5000].replace("{", "").replace("}", "")
     
-    # Prepare conditions text
-    conditions_text = ", ".join(trial_data.get('conditions', ['Not provided']))
+    conditions = [sanitize(c) for c in trial_data.get('conditions', [])] if isinstance(trial_data.get('conditions'), list) else ["Not provided"]
+    conditions_text = ", ".join(conditions)
     
     # Prepare prompt for API
     prompt = f"""
@@ -55,11 +66,11 @@ def classify_rare_disease(trial_data: Dict[str, Any], api_key: str) -> Dict[str,
     - Generally characterized by low prevalence, chronicity, and often genetic origin
     
     Clinical Trial Information:
-    - Official Title: {trial_data.get('official_title', 'Not provided')}
-    - Brief Title: {trial_data.get('brief_title', 'Not provided')}
+    - Official Title: {sanitize(trial_data.get('official_title'))}
+    - Brief Title: {sanitize(trial_data.get('brief_title'))}
     - Conditions: {conditions_text}
-    - Brief Summary: {trial_data.get('brief_summary', 'Not provided')}
-    - Detailed Description: {trial_data.get('detailed_description', 'Not provided')}
+    - Brief Summary: {sanitize(trial_data.get('brief_summary'))}
+    - Detailed Description: {sanitize(trial_data.get('detailed_description'))}
     
     Based on this information, is this a clinical trial for a rare disease? 
     
@@ -97,7 +108,9 @@ def classify_rare_disease(trial_data: Dict[str, Any], api_key: str) -> Dict[str,
         response = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=30,  # Add timeout
+            verify=True  # Verify SSL certificates
         )
         
         if response.status_code == 200:
@@ -139,6 +152,26 @@ def classify_rare_disease(trial_data: Dict[str, Any], api_key: str) -> Dict[str,
         }
 
 
+def _check_rate_limit():
+    """Simple rate limiting implementation"""
+    if 'api_calls' not in st.session_state:
+        st.session_state.api_calls = []
+        st.session_state.api_call_limit = 10  # Limit per hour
+    
+    # Clean up old calls (older than 1 hour)
+    current_time = time.time()
+    st.session_state.api_calls = [call_time for call_time in st.session_state.api_calls 
+                                 if current_time - call_time < 3600]
+    
+    # Check if we're under the limit
+    if len(st.session_state.api_calls) >= st.session_state.api_call_limit:
+        return False
+    
+    # Add this call
+    st.session_state.api_calls.append(current_time)
+    return True
+
+
 def extract_classification_statement(text: str) -> str:
     """
     Extract the classification statement from the API response.
@@ -154,4 +187,3 @@ def extract_classification_statement(text: str) -> str:
         if '## classification' in line and i+1 < len(lines):
             return lines[i+1].strip()
     return "Not explicitly stated"
-    
