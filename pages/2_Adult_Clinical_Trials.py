@@ -103,7 +103,7 @@ def fetch_adult_trials_in_canada(engine):
 def main():
     # Set page config
     st.set_page_config(
-        page_title="Adult Clinical Trials in Canada",
+        page_title="Adult Clinical Trials in Canada - But more fun!",
         page_icon="🧬",
         layout="wide"
     )
@@ -111,7 +111,7 @@ def main():
     # Initialize session state variables
     initialize_session_state()
         
-    st.title("Adult Clinical Trials in Canada")
+    st.title("Adult Clinical Trials in Canada - Fun required!")
     st.write("This page displays clinical trials with sites in Canada that include participants 18 years or older.")
     
     # Connect to the database
