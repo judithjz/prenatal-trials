@@ -4,6 +4,7 @@ This module contains functions for filtering and processing trial data.
 """
 
 import pandas as pd
+import logging
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 
@@ -12,12 +13,13 @@ def filter_trials_by_criteria(df: pd.DataFrame,
                              phase_filter: Optional[Union[str, List[str]]] = None, 
                              year_filter: Optional[Union[int, Tuple[int, int]]] = None,
                              keyword_filter: Optional[str] = None,
+                             gender_filter: Optional[str] = None,
+                             type_filter: Optional[str] = None,
                              condition_filter: Optional[str] = None,
                              conditions_dict: Optional[Dict[str, List[str]]] = None,
                              keywords_dict: Optional[Dict[str, List[str]]] = None) -> pd.DataFrame:
     """
-    Filter the trials DataFrame based on various criteria.
-    
+    Filter the trials DataFrame based on various criteria.    
     Args:
         df: DataFrame containing trials data
         status_filter: Status or list of statuses to filter by
@@ -25,6 +27,8 @@ def filter_trials_by_criteria(df: pd.DataFrame,
         year_filter: Year or tuple of (min_year, max_year) to filter by
         keyword_filter: Keyword to search for in trial titles, descriptions, and keywords
         condition_filter: Condition to search for in trial conditions
+        gender_filter: All, Male, Female
+        type_filter: Interventional, Observational, Expanded access
         conditions_dict: Dictionary mapping NCT IDs to lists of conditions
         keywords_dict: Dictionary mapping NCT IDs to lists of keywords
         
@@ -68,6 +72,10 @@ def filter_trials_by_criteria(df: pd.DataFrame,
                 filtered_df = filtered_df[filtered_df['phase'].isna() | (filtered_df['phase'] == 'N/A')]
             else:
                 filtered_df = filtered_df[filtered_df['phase'] == phase_filter]
+
+    # Apply type filter (single value or list)
+    if type_filter:
+        filtered_df = filtered_df[filtered_df['type'] == type_filter]
     
     # Apply year filter (tuple for range or single year)
     if year_filter:
@@ -79,6 +87,14 @@ def filter_trials_by_criteria(df: pd.DataFrame,
         elif isinstance(year_filter, int):
             # Single year filter
             filtered_df = filtered_df[filtered_df['start_year'] == year_filter]
+
+    logging.info('gender-filter: %s', gender_filter)
+    logging.info('pre-gender-filter: %d', filtered_df.shape[0])
+    logging.info('df cols: %s', df.columns)
+    logging.info('df head %s', df.head(1)['gender'])
+    if gender_filter:
+        filtered_df = filtered_df[filtered_df['gender'] == gender_filter]
+    logging.info('post-gender-filter: %d', filtered_df.shape[0])
     
     # For keyword and condition filters, we need more complex filtering
     if keyword_filter or condition_filter:
