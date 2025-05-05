@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import logging
 
 # Import from utility modules
 from utils.database_utils import (
@@ -24,7 +25,6 @@ from utils.filtering_utils import (
 )
 
 from utils.visualization_utils import (
-    plot_phase_distribution,
     plot_status_distribution,
     plot_yearly_trends,
     plot_trial_age_distribution,
@@ -40,12 +40,23 @@ from utils.api_utils import (
     get_download_link
 )
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,  # Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format="%(asctime)s — %(levelname)s — %(message)s",  # Define the log message format
+    datefmt="%Y-%m-%d %H:%M:%S",  # Define the date format
+    handlers=[
+        logging.FileHandler("app.log"),  # Logs to a file named 'app.log'
+        logging.StreamHandler()          # Logs to the console
+    ]
+)
 
 def fetch_adult_trials_in_canada(engine):
     """
     Fetch data for clinical trials that:
     1. Have at least one site in Canada (from facilities table)
     2. Include participants with minimum age >= 18 years
+    3. Include participants with a maximum age <= 65 years
     
     Args:
         engine: SQLAlchemy engine
@@ -60,9 +71,10 @@ def fetch_adult_trials_in_canada(engine):
         s.official_title,
         s.overall_status,
         e.minimum_age,
-        s.phase,
+        e.maximum_age,
         s.study_type,
         s.start_date,
+        e.gender,
         bs.description as brief_summary,
         dd.description as detailed_description,
         COUNT(DISTINCT f.id) AS num_canadian_sites
@@ -73,8 +85,8 @@ def fetch_adult_trials_in_canada(engine):
     LEFT JOIN ctgov.detailed_descriptions dd ON s.nct_id = dd.nct_id
     WHERE f.country = 'Canada'
     GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status, 
-             e.minimum_age, s.phase, s.study_type, s.start_date, 
-             bs.description, dd.description
+             e.minimum_age, e.maximum_age, s.study_type, s.start_date,
+             bs.description, dd.description, e.gender
     ORDER BY s.start_date DESC;
     """
     
@@ -82,18 +94,26 @@ def fetch_adult_trials_in_canada(engine):
         # Use SQLAlchemy's text() to properly prepare the query
         from sqlalchemy import text
         df = pd.read_sql_query(text(query), engine)
+
+        logging.info("original read: %d rows", df.shape[0])
         
         # Parse minimum age to months for filtering
         from utils.database_utils import parse_age_to_months
         df['age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
-        
+
+        # Parse maximum age to months for filtering
+        df['age_in_months'] = df['maximum_age'].apply(parse_age_to_months)
+
         # Filter for adult trials (age >= 18 years = 216 months)
         adult_df = df[df['age_in_months'] >= 216].copy()
         
         # Add some useful columns for analysis
         if not adult_df.empty and 'start_date' in adult_df.columns:
             adult_df['start_year'] = pd.to_datetime(adult_df['start_date'], errors='coerce').dt.year
-        
+       
+        logging.info("Returnign DF: %s", adult_df)
+        logging.info('filtered df: %d rows', adult_df.shape[0])
+ 
         return adult_df
     except Exception as e:
         st.error(f"Error fetching adult trials data: {e}")
@@ -103,7 +123,7 @@ def fetch_adult_trials_in_canada(engine):
 def main():
     # Set page config
     st.set_page_config(
-        page_title="Adult Clinical Trials in Canada - But more fun!",
+        page_title="Adult Clinical Trials in Canada - For Prenatal Search",
         page_icon="🧬",
         layout="wide"
     )
@@ -111,7 +131,7 @@ def main():
     # Initialize session state variables
     initialize_session_state()
         
-    st.title("Adult Clinical Trials in Canada - Fun required!")
+    st.title("Adult Clinical Trials in Canada - For Prenatal Search")
     st.write("This page displays clinical trials with sites in Canada that include participants 18 years or older.")
     
     # Connect to the database
@@ -126,9 +146,11 @@ def main():
         with st.spinner("Loading adult trials from the AACT database..."):
             # Fetch adult trials
             adult_trials = fetch_adult_trials_in_canada(engine)
+            logging.info('fetched adult trials')
             
             # Store in session state
             set_session_state('adult_trials', adult_trials)
+            logging.info('storing in session state. adult trials size %d', adult_trials.shape[0])
             
             if not adult_trials.empty:
                 # Fetch conditions for trials
@@ -164,46 +186,36 @@ def main():
     
     # Query basic data to populate filters
     basic_query = """
-    SELECT 
-        DISTINCT overall_status, 
-        phase,
-        EXTRACT(YEAR FROM start_date) as start_year
-    FROM ctgov.studies
-    WHERE overall_status IS NOT NULL
-    ORDER BY overall_status;
+    SELECT DISTINCT
+        s.overall_status, 
+        e.gender,
+        EXTRACT(YEAR FROM s.start_date) as start_year
+    FROM ctgov.studies s
+    JOIN ctgov.eligibilities e ON s.nct_id = e.nct_id
+    WHERE s.overall_status IS NOT NULL
+    AND e.gender IS NOT NULL
+    ORDER BY s.overall_status;
+
     """
     
     try:
         # Use SQLAlchemy's text() to properly prepare the query
         from sqlalchemy import text
         filter_options = pd.read_sql_query(text(basic_query), engine)
-        status_options = filter_options['overall_status'].dropna().unique().tolist()
-        phase_options = filter_options['phase'].dropna().unique().tolist() + ['Not Applicable']
+        gender_options = filter_options['gender'].dropna().unique().tolist()
         
         # Year options manually filtered to avoid too many options
         year_options = sorted(filter_options['start_year'].dropna().astype(int).unique().tolist())
         year_options = [year for year in year_options if year >= 2000]
     except Exception as e:
         st.sidebar.error(f"Error loading filter options: {e}")
-        status_options = ["RECRUITING", "ACTIVE, NOT RECRUITING", "COMPLETED"]
-        phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Not Applicable"]
         year_options = list(range(2010, 2025))
+        gender_options = ["All", "Female", "Male"]        
     
     # Create sidebar filters
     st.sidebar.header("Filters")
     
-    status_filter = st.sidebar.multiselect(
-        "Trial Status:",
-        options=status_options,
-        default=["RECRUITING"]
-    )
-    
-    phase_filter = st.sidebar.multiselect(
-        "Trial Phase:",
-        options=phase_options,
-        default=[]
-    )
-    
+   
     year_filter = st.sidebar.slider(
         "Start Year Range:",
         min_value=min(year_options) if year_options else 2000,
@@ -211,6 +223,14 @@ def main():
         value=(min(year_options) if year_options else 2000, 
                max(year_options) if year_options else 2025)
     )
+    
+    gender_filter = st.sidebar.selectbox(
+        "Gender Eligibility:",
+        options=["ALL", "MALE", "FEMALE"],  
+        index=0,
+    )
+
+ 
     
     keyword_filter = st.sidebar.text_input("Keyword Search:", "")
     keyword_filter = keyword_filter.strip() if keyword_filter else None
@@ -224,14 +244,13 @@ def main():
         # Use the filtering utility to apply all filters at once
         filtered_df = filter_trials_by_criteria(
             adult_df,
-            status_filter=status_filter,
-            phase_filter=phase_filter,
             year_filter=year_filter,
+            gender_filter=gender_filter,
             keyword_filter=keyword_filter,
             condition_filter=condition_filter,
             conditions_dict=safe_get_session_state('adult_conditions_dict', {}),
-            keywords_dict=safe_get_session_state('adult_keywords_dict', {})
-        )
+            keywords_dict=safe_get_session_state('adult_keywords_dict', {}),
+            )
         
         # Display results
         if filtered_df.empty:
@@ -253,7 +272,7 @@ def main():
             with tab1:
                 st.subheader("Adult Clinical Trials")
                 # Display the trials in a dataframe
-                display_cols = ['nct_id', 'brief_title', 'overall_status', 'minimum_age', 'phase', 'start_date', 'num_canadian_sites']
+                display_cols = ['nct_id', 'brief_title', 'minimum_age', 'maximum_age', 'start_date', 'num_canadian_sites', 'gender']
                 st.dataframe(filtered_df[display_cols], use_container_width=True)
                 
                 # Download button for the results
@@ -261,18 +280,9 @@ def main():
 
             with tab2:
                 st.subheader("Data Visualizations")
+               
                 
-                # Visualization 1: Trials by Phase
-                st.write("### Trials by Phase")
-                fig_phase = plot_phase_distribution(filtered_df)
-                st.plotly_chart(fig_phase, use_container_width=True)
-                
-                # Visualization 2: Trials by Status
-                st.write("### Trials by Status")
-                fig_status = plot_status_distribution(filtered_df)
-                st.plotly_chart(fig_status, use_container_width=True)
-                
-                # Visualization 3: Trials by Year (if available)
+                # Visualization 1: Trials by Year (if available)
                 if 'start_year' in filtered_df.columns and not filtered_df['start_year'].isna().all():
                     st.write("### Trials by Year")
                     fig_year, fig_area = plot_yearly_trends(filtered_df)
@@ -280,11 +290,13 @@ def main():
                         st.plotly_chart(fig_year, use_container_width=True)
                         st.plotly_chart(fig_area, use_container_width=True)
                 
-                # Visualization 4: Age Distribution
+                # Visualization 2: Age Distribution
                 st.write("### Age Distribution")
                 fig_age = plot_trial_age_distribution(filtered_df)
                 st.plotly_chart(fig_age, use_container_width=True)
 
+            
+            
             with tab3:
                 # Pass filtered_df and conn to ensure that the visualization 
                 # only uses facilities for the filtered trials
@@ -322,3 +334,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
