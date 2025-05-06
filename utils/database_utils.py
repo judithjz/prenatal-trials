@@ -3,6 +3,7 @@ Database utility functions for the Pediatric Clinical Trials app.
 This module handles all database interactions and query operations.
 """
 
+from contextlib import contextmanager
 import streamlit as st
 import pandas as pd
 import re
@@ -74,58 +75,6 @@ def handle_database_query(query_function, *args, error_message="Error executing 
         # Show a sanitized message to users
         st.error(f"{error_message}")
         return None
-
-
-@st.cache_data(ttl=3600)  # Cache for one hour
-def fetch_pediatric_trials_in_canada(_engine: Engine) -> pd.DataFrame:
-    """
-    Fetch data for clinical trials
-    """
-    try:
-        query = """
-        SELECT DISTINCT
-            s.nct_id,
-            s.brief_title,
-            s.official_title,
-            s.overall_status,
-            e.minimum_age,
-            s.phase,
-            s.study_type,
-            s.start_date,
-            bs.description as brief_summary,
-            dd.description as detailed_description,
-            COUNT(DISTINCT f.id) AS num_canadian_sites
-        FROM ctgov.studies s
-        JOIN ctgov.facilities f ON s.nct_id = f.nct_id
-        JOIN ctgov.eligibilities e ON s.nct_id = e.nct_id
-        LEFT JOIN ctgov.brief_summaries bs ON s.nct_id = bs.nct_id
-        LEFT JOIN ctgov.detailed_descriptions dd ON s.nct_id = dd.nct_id
-        WHERE f.country = 'Canada'
-        GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status, 
-                 e.minimum_age, s.phase, s.study_type, s.start_date, 
-                 bs.description, dd.description
-        ORDER BY s.start_date DESC;
-        """
-        
-        # Use SQLAlchemy engine
-        df = pd.read_sql_query(text(query), _engine)
-        
-        # Parse minimum age to months for filtering
-        df['age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
-        
-        # Filter for pediatric trials (age < 18 years = 216 months)
-        pediatric_df = df[df['age_in_months'] < 216].copy()
-        
-        # Add some useful columns for analysis
-        if not pediatric_df.empty and 'start_date' in pediatric_df.columns:
-            pediatric_df['start_year'] = pd.to_datetime(pediatric_df['start_date'], errors='coerce').dt.year
-        
-        return pediatric_df
-    except Exception as e:
-        st.error("Error fetching data")
-        logging.error(f"Database error: {str(e)}")
-        return pd.DataFrame()
-
 
 def parse_age_to_months(age_str: Optional[str]) -> Optional[float]:
     """
