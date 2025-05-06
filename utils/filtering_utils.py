@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 
 def filter_trials_by_criteria(df: pd.DataFrame, 
                              status_filter: Optional[Union[str, List[str]]] = None, 
-                             phase_filter: Optional[Union[str, List[str]]] = None, 
                              year_filter: Optional[Union[int, Tuple[int, int]]] = None,
                              keyword_filter: Optional[str] = None,
                              gender_filter: Optional[str] = None,
@@ -23,7 +22,6 @@ def filter_trials_by_criteria(df: pd.DataFrame,
     Args:
         df: DataFrame containing trials data
         status_filter: Status or list of statuses to filter by
-        phase_filter: Phase or list of phases to filter by
         year_filter: Year or tuple of (min_year, max_year) to filter by
         keyword_filter: Keyword to search for in trial titles, descriptions, and keywords
         condition_filter: Condition to search for in trial conditions
@@ -49,30 +47,6 @@ def filter_trials_by_criteria(df: pd.DataFrame,
             # For single value filter
             filtered_df = filtered_df[filtered_df['overall_status'] == status_filter]
     
-    # Apply phase filter (single value or list)
-    if phase_filter:
-        if isinstance(phase_filter, list):
-            if 'Not Applicable' in phase_filter:
-                # Handle "Not Applicable" specially for multiselect
-                phase_filter_without_na = [p for p in phase_filter if p != 'Not Applicable']
-                is_na = filtered_df['phase'].isna() | (filtered_df['phase'] == 'N/A')
-                
-                if phase_filter_without_na:
-                    # Both "Not Applicable" and other phases selected
-                    filtered_df = filtered_df[is_na | filtered_df['phase'].isin(phase_filter_without_na)]
-                else:
-                    # Only "Not Applicable" selected
-                    filtered_df = filtered_df[is_na]
-            else:
-                # Regular phase filtering for multiselect
-                filtered_df = filtered_df[filtered_df['phase'].isin(phase_filter)]
-        else:
-            # Single phase filter
-            if phase_filter == 'Not Applicable':
-                filtered_df = filtered_df[filtered_df['phase'].isna() | (filtered_df['phase'] == 'N/A')]
-            else:
-                filtered_df = filtered_df[filtered_df['phase'] == phase_filter]
-
     # Apply type filter (single value or list)
     if type_filter:
         filtered_df = filtered_df[filtered_df['type'] == type_filter]

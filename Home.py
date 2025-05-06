@@ -34,8 +34,8 @@ def main():
         Explore clinical trials in Canada that include participants **under 18 years old**.
         
         Features:
-        - Search and filter pediatric trials by status, phase, year, keywords, and conditions
-        - View interactive visualizations by phase, status, and year
+        - Search and filter pediatric trials by status, year, keywords, and conditions
+        - View interactive visualizations by status, and year
         - Explore geographic distribution with population-normalized metrics
         - View consolidated metropolitan area data (Greater Toronto Area and Metro Vancouver)
         - Access detailed trial information and condition analysis
@@ -90,7 +90,6 @@ def main():
         - Visualize trial counts across top countries globally
         - Explore geographic distribution with interactive maps
         - Compare pediatric vs. adult trial proportions by country
-        - Analyze trial phase and status distributions internationally
         - Track clinical trial trends over time by country
         """)
         

@@ -36,9 +36,6 @@ def initialize_session_state():
     if 'status_filter' not in st.session_state:
         st.session_state.status_filter = ["RECRUITING"]
     
-    if 'phase_filter' not in st.session_state:
-        st.session_state.phase_filter = []
-    
     if 'year_filter' not in st.session_state:
         st.session_state.year_filter = None  # Will be set based on available data
     
@@ -102,7 +99,6 @@ def set_session_state(key: str, value: Any) -> None:
 
 
 def update_filter_state(status: Optional[List[str]] = None, 
-                        phase: Optional[List[str]] = None,
                         year: Optional[Tuple[int, int]] = None,
                         keyword: Optional[str] = None,
                         condition: Optional[str] = None) -> None:
@@ -112,16 +108,12 @@ def update_filter_state(status: Optional[List[str]] = None,
     
     Args:
         status: Status filter list
-        phase: Phase filter list
         year: Year filter tuple (min_year, max_year)
         keyword: Keyword search string
         condition: Condition search string
     """
     if status is not None:
         st.session_state.status_filter = status
-    
-    if phase is not None:
-        st.session_state.phase_filter = phase
     
     if year is not None:
         st.session_state.year_filter = year

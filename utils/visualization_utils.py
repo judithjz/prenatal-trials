@@ -677,66 +677,7 @@ def render_city_visualization_normalized(filtered_df: pd.DataFrame, conn: any, f
                     st.write(", ".join(sorted(gta_cities)))
                 else:
                     st.write("No cities in the current dataset were mapped to Greater Toronto Area.")
-
     
-def plot_phase_distribution(df: pd.DataFrame) -> px.bar:
-    """
-    Create a bar chart showing the distribution of trials by phase,
-    enforcing the exact custom order via Pandas categorical.
-    """
-    # 1) Replace NA variants and unify your labels
-    df = df.copy()
-    df['phase'] = (
-        df['phase']
-        .fillna('Not Applicable')
-        .replace({'NA': 'Not Applicable'})
-        # Example of unifying underscores/spaces, if needed:
-        # .replace({'PHASE_1': 'PHASE1', 'PHASE 1': 'PHASE1'})
-    )
-    
-    # 2) Exclude Not Applicable if desired (remove the line below if you want to keep it)
-    df = df[df['phase'] != 'Not Applicable']
-    
-    # 3) Count occurrences
-    phase_counts = df['phase'].value_counts().reset_index()
-    phase_counts.columns = ['phase', 'count']
-    
-    # 4) Your custom order must match EXACTLY what appears in 'phase_counts["phase"]'
-    custom_phase_order = [
-        "EARLY_PHASE1",
-        "PHASE1",
-        "PHASE1/2",
-        "PHASE2",
-        "PHASE2/3",
-        "PHASE3",
-        "PHASE4",
-        "Not Applicable"
-    ]
-    
-    # 5) Convert to a categorical dtype with the custom order
-    from pandas.api.types import CategoricalDtype
-    cat_type = CategoricalDtype(categories=custom_phase_order, ordered=True)
-    phase_counts['phase'] = phase_counts['phase'].astype(cat_type)
-    
-    # 6) Sort by the categorical order
-    phase_counts.sort_values('phase', inplace=True)
-    
-    # 7) Build the figure
-    n = phase_counts['count'].sum()
-    fig = px.bar(
-        phase_counts,
-        x='phase',
-        y='count',
-        labels={'phase': 'Trial Phase', 'count': 'Number of Trials'},
-        title=f"Distribution of Trials by Phase (n = {n} Trials Reporting Phase)",
-        color='phase',
-        # category_orders won't matter if we already sorted the data, 
-        # but you can still include it for safety:
-        category_orders={"phase": custom_phase_order},
-    )
-    
-    fig.update_layout(template="plotly_white")
-    return fig
 
 def plot_status_distribution(df: pd.DataFrame) -> px.pie:
     """
@@ -897,7 +838,6 @@ def render_trial_details(df: pd.DataFrame, conn, keywords_dict=None, conditions_
         if pd.notna(trial_data['official_title']):
             st.write(f"**Official Title:** {trial_data['official_title']}")
         st.write(f"**Status:** {trial_data['overall_status']}")
-        st.write(f"**Phase:** {trial_data['phase'] if pd.notna(trial_data['phase']) else 'Not Applicable'}")
         st.write(f"**Minimum Age:** {trial_data['minimum_age']}")
         st.write(f"**Canadian Sites:** {int(trial_data['num_canadian_sites'])}")
         
