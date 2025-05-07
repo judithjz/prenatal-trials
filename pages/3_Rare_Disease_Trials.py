@@ -26,7 +26,6 @@ from utils.filtering_utils import (
 )
 
 from utils.visualization_utils import (
-    plot_phase_distribution,
     plot_status_distribution,
     plot_yearly_trends,
     render_city_visualization,
@@ -60,7 +59,7 @@ def main():
         st.error("Failed to connect to the database. Check your credentials and try again.")
         return
     
-    with conn:
+    try:
         # Check if pre-classified data exists
         try:
             rare_df = pd.read_csv('data/rare_disease_classification.csv')
@@ -235,11 +234,6 @@ def main():
                 with tab2:
                     st.subheader("Data Visualizations")
                     
-                    # Visualization 1: Trials by Phase
-                    st.write("### Trials by Phase")
-                    fig_phase = plot_phase_distribution(filtered_df)
-                    st.plotly_chart(fig_phase, use_container_width=True)
-                    
                     # Visualization 2: Trials by Status
                     st.write("### Trials by Status")
                     fig_status = plot_status_distribution(filtered_df)
@@ -350,6 +344,8 @@ def main():
                         
                         # Link to ClinicalTrials.gov
                         st.markdown(f"[View on ClinicalTrials.gov](https://clinicaltrials.gov/study/{selected_trial})")
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

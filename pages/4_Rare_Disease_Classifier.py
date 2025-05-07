@@ -60,7 +60,7 @@ def on_back_button_click():
 
 def render_search_page():
     """Render the search page."""
-    st.title("Pediatric Clinical Trials in Canada - Rare Disease Classifier")
+    st.title("Adult Trials in Canada - Prenatal Classifier")
     
     # Connect to the database
     conn = connect_to_database()
@@ -68,7 +68,7 @@ def render_search_page():
         st.error("Failed to connect to the database. Check your credentials and try again.")
         return
     
-    with conn:
+    with conn.connect():
         # Initialize session state if necessary
         initialize_session_state()
         
@@ -256,8 +256,8 @@ def render_results_page():
     if not conn:
         st.error("Failed to connect to the database. Check your credentials and try again.")
         return
-    
-    with conn:
+
+    try:
         # Get API key
         anthropic_api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
         if not anthropic_api_key and hasattr(st.secrets, "database") and hasattr(st.secrets.database, "ANTHROPIC_API_KEY"):
@@ -406,6 +406,8 @@ def render_results_page():
                 if st.button(f"View details for {selected_trial_id}", key="view_details_button"):
                     on_view_details_button_click(selected_trial_id)
                     st.rerun()
+    finally:
+        conn.close()
 
 
 def render_detail_page():

@@ -84,6 +84,7 @@ def fetch_adult_trials_in_canada(engine):
     LEFT JOIN ctgov.brief_summaries bs ON s.nct_id = bs.nct_id
     LEFT JOIN ctgov.detailed_descriptions dd ON s.nct_id = dd.nct_id
     WHERE f.country = 'Canada'
+    AND s.study_type = 'INTERVENTIONAL'
     GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status, 
              e.minimum_age, e.maximum_age, s.study_type, s.start_date,
              bs.description, dd.description, e.gender
@@ -140,7 +141,6 @@ def main():
         st.error("Failed to connect to the database. Check your credentials and try again.")
         return
     
-    # REMOVE with conn: context manager and just use the engine directly
     # Load the adult trials data if it doesn't exist in session state or reload is requested
     if safe_get_session_state('adult_trials') is None or safe_get_session_state('need_data_reload', True):
         with st.spinner("Loading adult trials from the AACT database..."):

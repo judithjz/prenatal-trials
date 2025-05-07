@@ -13,12 +13,18 @@ def initialize_session_state():
     Creates default values for any missing variables.
     """
     # Core data variables
-    if 'pediatric_trials' not in st.session_state:
-        st.session_state.pediatric_trials = None
+    if 'adult_trials' not in st.session_state:
+        st.session_state.adult_trials = None
     
-    if 'filtered_trials' not in st.session_state:
-        st.session_state.filtered_trials = None
+    if 'filtered_adult_trials' not in st.session_state:
+        st.session_state.filtered_adult_trials = None
     
+    if 'prenatal_trials' not in st.session_state:
+        st.session_state.prenatal_trials = None
+    
+    if 'filtered_prenatal_trials' not in st.session_state:
+        st.session_state.filtered_prenatal_trials = None
+
     if 'facilities_df' not in st.session_state:
         st.session_state.facilities_df = None
     

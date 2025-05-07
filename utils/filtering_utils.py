@@ -62,13 +62,8 @@ def filter_trials_by_criteria(df: pd.DataFrame,
             # Single year filter
             filtered_df = filtered_df[filtered_df['start_year'] == year_filter]
 
-    logging.info('gender-filter: %s', gender_filter)
-    logging.info('pre-gender-filter: %d', filtered_df.shape[0])
-    logging.info('df cols: %s', df.columns)
-    logging.info('df head %s', df.head(1)['gender'])
     if gender_filter:
         filtered_df = filtered_df[filtered_df['gender'] == gender_filter]
-    logging.info('post-gender-filter: %d', filtered_df.shape[0])
     
     # For keyword and condition filters, we need more complex filtering
     if keyword_filter or condition_filter:
