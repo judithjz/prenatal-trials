@@ -27,8 +27,8 @@ def get_download_link(df: pd.DataFrame, filename: str = "prenatal_trials.csv",
     # Check size before encoding
     csv = df.to_csv(index=False)
     size_mb = len(csv.encode()) / (1024 * 1024)
-    if size_mb > max_size_mb:
-        return f"Error: Data size ({size_mb:.1f}MB) exceeds maximum allowed size ({max_size_mb}MB)"
+    #if size_mb > max_size_mb:
+    #    return f"Error: Data size ({size_mb:.1f}MB) exceeds maximum allowed size ({max_size_mb}MB)"
     
     # Encode and create link
     b64 = base64.b64encode(csv.encode()).decode()

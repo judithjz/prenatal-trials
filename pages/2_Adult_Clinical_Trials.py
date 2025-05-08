@@ -102,11 +102,8 @@ def fetch_adult_trials_in_canada(engine):
         from utils.database_utils import parse_age_to_months
         df['age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
 
-        # Parse maximum age to months for filtering
-        df['age_in_months'] = df['maximum_age'].apply(parse_age_to_months)
-
         # Filter for adult trials (age >= 18 years = 216 months)
-        adult_df = df[df['age_in_months'] >= 216].copy()
+        adult_df = df[(df['age_in_months'] >= 216) & (df['age_in_months'] <= 780)].copy()
         
         # Add some useful columns for analysis
         if not adult_df.empty and 'start_date' in adult_df.columns:
@@ -114,7 +111,7 @@ def fetch_adult_trials_in_canada(engine):
        
         logging.info("Returnign DF: %s", adult_df)
         logging.info('filtered df: %d rows', adult_df.shape[0])
- 
+
         return adult_df
     except Exception as e:
         st.error(f"Error fetching adult trials data: {e}")
@@ -178,7 +175,7 @@ def main():
                     set_session_state('adult_city_data', pd.DataFrame())
             
             set_session_state('need_data_reload', False)
-    
+   
     # Add a refresh button to force reload data
     if st.sidebar.button("Reload Data"):
         set_session_state('need_data_reload', True)
@@ -229,8 +226,6 @@ def main():
         options=["ALL", "MALE", "FEMALE"],  
         index=0,
     )
-
- 
     
     keyword_filter = st.sidebar.text_input("Keyword Search:", "")
     keyword_filter = keyword_filter.strip() if keyword_filter else None

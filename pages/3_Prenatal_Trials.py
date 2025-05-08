@@ -93,6 +93,7 @@ def main():
                 s.study_type,
                 s.start_date,
                 e.criteria,
+                e.gender,
                 bs.description AS brief_summary,
                 dd.description AS detailed_description,
                 COUNT(DISTINCT f.id) AS num_canadian_sites
@@ -105,7 +106,7 @@ def main():
               AND position('pregnan' IN LOWER(e.criteria)) > 0
             GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status,
                      e.minimum_age, s.study_type, s.start_date,
-                     bs.description, dd.description, e.criteria
+                     bs.description, dd.description, e.criteria, e.gender
             ORDER BY s.start_date DESC;
             """
            
@@ -181,7 +182,14 @@ def main():
                 )
             else:
                 year_filter = None
-            
+           
+            gender_options = prenatal_trials_data['gender'].dropna().astype(str).unique().tolist()
+            gender_filter = st.sidebar.selectbox(
+                "Gender Eligibility:",
+                options=["ALL", "MALE", "FEMALE"],  
+                index=0,
+            )
+
             # Keyword and condition search
             keyword_filter = st.sidebar.text_input("Keyword Search:", "")
             keyword_filter = keyword_filter.strip() if keyword_filter else None
@@ -194,6 +202,7 @@ def main():
                 prenatal_trials_data,
                 status_filter=status_filter,
                 year_filter=year_filter,
+                gender_filter=gender_filter,
                 keyword_filter=keyword_filter,
                 condition_filter=condition_filter,
                 conditions_dict=safe_get_session_state('prenatal_conditions_dict', {}),
@@ -240,11 +249,11 @@ def main():
 def _ShowTrials(filtered_df):
     st.subheader("Prenatal Clinical Trials")
     # Display trials in a dataframe
-    display_cols = ['nct_id', 'brief_title', 'overall_status', 'minimum_age', 'start_date', 'num_canadian_sites', 'criteria']
+    display_cols = ['nct_id', 'brief_title', 'overall_status', 'minimum_age', 'start_date', 'num_canadian_sites']
     st.dataframe(filtered_df[display_cols], use_container_width=True)
    
     # Download button
-    st.markdown(get_download_link(filtered_df[display_cols], filename="prenatal_disease_trials.csv"), unsafe_allow_html=True)
+    st.markdown(get_download_link(filtered_df, filename="prenatal_disease_trials.csv"), unsafe_allow_html=True)
 
 
 def _ShowGeographicDistribution(filtered_df, conn):
