@@ -5,14 +5,16 @@ This module contains functions for filtering and processing trial data.
 
 import pandas as pd
 import logging
+from datetime import date
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 
 def filter_trials_by_criteria(df: pd.DataFrame, 
                              status_filter: Optional[Union[str, List[str]]] = None, 
-                             year_filter: Optional[Union[int, Tuple[int, int]]] = None,
+                             date_filter: Optional[Tuple[date, date]] = None,
                              keyword_filter: Optional[str] = None,
                              gender_filter: Optional[str] = None,
+                             age_filter: Optional[str] = None,
                              type_filter: Optional[str] = None,
                              condition_filter: Optional[str] = None,
                              conditions_dict: Optional[Dict[str, List[str]]] = None,
@@ -22,10 +24,11 @@ def filter_trials_by_criteria(df: pd.DataFrame,
     Args:
         df: DataFrame containing trials data
         status_filter: Status or list of statuses to filter by
-        year_filter: Year or tuple of (min_year, max_year) to filter by
+        date_filter: Tuple of (min_date, max_date) to filter by
         keyword_filter: Keyword to search for in trial titles, descriptions, and keywords
         condition_filter: Condition to search for in trial conditions
         gender_filter: All, Male, Female
+        age_filter: All, < 18, 18+
         type_filter: Interventional, Observational, Expanded access
         conditions_dict: Dictionary mapping NCT IDs to lists of conditions
         keywords_dict: Dictionary mapping NCT IDs to lists of keywords
@@ -51,17 +54,19 @@ def filter_trials_by_criteria(df: pd.DataFrame,
     if type_filter:
         filtered_df = filtered_df[filtered_df['type'] == type_filter]
     
-    # Apply year filter (tuple for range or single year)
-    if year_filter:
-        if isinstance(year_filter, tuple) and len(year_filter) == 2:
-            # Year range filter (min_year, max_year)
-            min_year, max_year = year_filter
-            filtered_df = filtered_df[(filtered_df['start_year'] >= min_year) & 
-                                     (filtered_df['start_year'] <= max_year)]
-        elif isinstance(year_filter, int):
-            # Single year filter
-            filtered_df = filtered_df[filtered_df['start_year'] == year_filter]
+    # Apply date filter (tuple for range or single year)
+    if date_filter and isinstance(date_filter, tuple) and len(date_filter) == 2:
+        # Date range filter (min_date, max_date)
+            min_date, max_date = date_filter
+            filtered_df = filtered_df[(filtered_df['start_date'] >= min_date) & 
+                                     (filtered_df['start_date'] <= max_date)]
 
+    if age_filter:
+      if age_filter == 'PEDIATRIC':
+          filtered_df = filtered_df[filtered_df['max_age_in_months'] < 216]
+      elif age_filter == 'ADULT':
+          filtered_df = filtered_df[filtered_df['min_age_in_months'] >= 216]
+  
     if gender_filter:
         filtered_df = filtered_df[filtered_df['gender'] == gender_filter]
     

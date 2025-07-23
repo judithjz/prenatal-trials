@@ -760,7 +760,7 @@ def plot_trial_age_distribution(df: pd.DataFrame) -> px.histogram:
     """
     fig = px.histogram(
         df,
-        x='age_in_months',
+        x='min_age_in_months',
         labels={'age_in_months': 'Minimum Age (months)', 'count': 'Number of Trials'},
         title='Distribution of Trials by Minimum Age',
         nbins=20
@@ -800,13 +800,13 @@ def render_summary_metrics(df: pd.DataFrame):
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Trial Sites", total_trials)
+        st.metric("Total Trials", total_trials)
     with col2:
         active_trials = df[df['overall_status'].isin(['RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION'])].shape[0]
-        st.metric("Active Trial Sites", active_trials)
+        st.metric("Active Trials", active_trials)
     with col3:
         recruiting_trials = df[df['overall_status'] == 'RECRUITING'].shape[0]
-        st.metric("Recruiting Trial Sites", recruiting_trials)
+        st.metric("Recruiting Trials", recruiting_trials)
 
 
 def render_trial_details(df: pd.DataFrame, conn, keywords_dict=None, conditions_dict=None):

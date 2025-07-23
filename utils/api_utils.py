@@ -13,27 +13,25 @@ import os
 
 
 def get_download_link(df: pd.DataFrame, filename: str = "prenatal_trials.csv", 
-                     button_text: str = "Download CSV", max_size_mb: int = 10) -> str:
-    """Generate a download link for a DataFrame."""
+                     button_text: str = "Download CSV", max_size_mb: int = 10) -> None:
+    """Render a Streamlit download button for a DataFrame as CSV, generating the file only when clicked."""
     # Validate inputs
     if not isinstance(df, pd.DataFrame):
-        return "Error: Invalid DataFrame"
-        
+        st.error("Error: Invalid DataFrame")
+        return
+
     # Validate filename to prevent directory traversal
     safe_filename = os.path.basename(filename)
     if not safe_filename or safe_filename != filename:
         safe_filename = "data.csv"
-        
-    # Check size before encoding
-    csv = df.to_csv(index=False)
-    size_mb = len(csv.encode()) / (1024 * 1024)
-    #if size_mb > max_size_mb:
-    #    return f"Error: Data size ({size_mb:.1f}MB) exceeds maximum allowed size ({max_size_mb}MB)"
-    
-    # Encode and create link
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="{safe_filename}">{button_text}</a>'
-    return href
+
+    # Use Streamlit's download_button for lazy CSV generation
+    st.download_button(
+        label=button_text,
+        data=df.to_csv(index=False).encode(),
+        file_name=safe_filename,
+        mime="text/csv"
+    )
 
 
 def prenatal_disease(trial_data: Dict[str, Any], api_key: str) -> Dict[str, Any]:

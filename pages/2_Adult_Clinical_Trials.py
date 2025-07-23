@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import date
 import pandas as pd
 import logging
 
@@ -77,7 +78,9 @@ def fetch_adult_trials_in_canada(engine):
         e.gender,
         bs.description as brief_summary,
         dd.description as detailed_description,
-        COUNT(DISTINCT f.id) AS num_canadian_sites
+        COUNT(DISTINCT f.id) AS num_canadian_sites,
+        e.criteria,
+        position('pregnan' IN LOWER(e.criteria)) > 0 as is_prenatal
     FROM ctgov.studies s
     JOIN ctgov.facilities f ON s.nct_id = f.nct_id
     JOIN ctgov.eligibilities e ON s.nct_id = e.nct_id
@@ -87,7 +90,8 @@ def fetch_adult_trials_in_canada(engine):
     AND s.study_type = 'INTERVENTIONAL'
     GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status, 
              e.minimum_age, e.maximum_age, s.study_type, s.start_date,
-             bs.description, dd.description, e.gender
+             bs.description, dd.description, e.gender, is_prenatal,
+             e.criteria
     ORDER BY s.start_date DESC;
     """
     
@@ -100,10 +104,11 @@ def fetch_adult_trials_in_canada(engine):
         
         # Parse minimum age to months for filtering
         from utils.database_utils import parse_age_to_months
-        df['age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
+        df['min_age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
+        df['max_age_in_months'] = df['maximum_age'].apply(parse_age_to_months)
 
-        # Filter for adult trials (age >= 18 years = 216 months)
-        adult_df = df[(df['age_in_months'] >= 216) & (df['age_in_months'] <= 780)].copy()
+        # Filter out any studies that are seniors-only
+        adult_df = df[(df['min_age_in_months'] <= 780)].copy()
         
         # Add some useful columns for analysis
         if not adult_df.empty and 'start_date' in adult_df.columns:
@@ -130,7 +135,7 @@ def main():
     initialize_session_state()
         
     st.title("Adult Clinical Trials in Canada - For Prenatal Search")
-    st.write("This page displays clinical trials with sites in Canada that include participants 18 years or older.")
+    st.write("This page displays clinical trials with sites in Canada that include participants 18 years or older.\n\nUPDATE ME!")
     
     # Connect to the database
     engine = connect_to_database()
@@ -212,19 +217,22 @@ def main():
     # Create sidebar filters
     st.sidebar.header("Filters")
     
-   
-    year_filter = st.sidebar.slider(
-        "Start Year Range:",
-        min_value=min(year_options) if year_options else 2000,
-        max_value=max(year_options) if year_options else 2025,
-        value=(min(year_options) if year_options else 2000, 
-               max(year_options) if year_options else 2025)
+  
+    date_filter = st.sidebar.date_input(
+    "Study Start Date Rage",
+    [date(2000,1,1), date(2025,12,31)]
     )
     
     gender_filter = st.sidebar.selectbox(
         "Gender Eligibility:",
         options=["ALL", "MALE", "FEMALE"],  
         index=0,
+    )
+
+    age_filter = st.sidebar.selectbox(
+      "Age Range:",
+      options=["ALL", "PEDIATRIC", "ADULT"],
+      index=0,
     )
     
     keyword_filter = st.sidebar.text_input("Keyword Search:", "")
@@ -239,8 +247,9 @@ def main():
         # Use the filtering utility to apply all filters at once
         filtered_df = filter_trials_by_criteria(
             adult_df,
-            year_filter=year_filter,
+            date_filter=date_filter,
             gender_filter=gender_filter,
+            age_filter=age_filter,
             keyword_filter=keyword_filter,
             condition_filter=condition_filter,
             conditions_dict=safe_get_session_state('adult_conditions_dict', {}),
@@ -279,7 +288,6 @@ def main():
                 
                 # Visualization 1: Trials by Year (if available)
                 if 'start_year' in filtered_df.columns and not filtered_df['start_year'].isna().all():
-                    st.write("### Trials by Year")
                     fig_year, fig_area = plot_yearly_trends(filtered_df)
                     if fig_year and fig_area:
                         st.plotly_chart(fig_year, use_container_width=True)

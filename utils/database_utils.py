@@ -132,7 +132,7 @@ def fetch_conditions_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataF
     """
     if not nct_ids:
         return pd.DataFrame()
-    
+    import time
     try:
         query = text("""
         SELECT nct_id, name
@@ -140,8 +140,11 @@ def fetch_conditions_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataF
         WHERE nct_id IN :nct_ids
         ORDER BY nct_id;
         """)
-        
+        logging.info("Starting DB read: fetch_conditions_for_trials")
+        t0 = time.time()
         df = pd.read_sql_query(query, _engine, params={"nct_ids": tuple(nct_ids)})
+        t1 = time.time()
+        logging.info(f"Finished DB read: fetch_conditions_for_trials in {t1-t0:.2f} seconds")
         return df
     except SQLAlchemyError as e:
         st.error(f"Error fetching conditions")
@@ -163,7 +166,7 @@ def fetch_keywords_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataFra
     """
     if not nct_ids:
         return pd.DataFrame()
-    
+    import time
     try:
         query = text("""
         SELECT nct_id, name AS keyword
@@ -171,8 +174,11 @@ def fetch_keywords_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.DataFra
         WHERE nct_id IN :nct_ids
         ORDER BY nct_id;
         """)
-        
+        logging.info("Starting DB read: fetch_keywords_for_trials")
+        t0 = time.time()
         df = pd.read_sql_query(query, _engine, params={"nct_ids": tuple(nct_ids)})
+        t1 = time.time()
+        logging.info(f"Finished DB read: fetch_keywords_for_trials in {t1-t0:.2f} seconds")
         return df
     except SQLAlchemyError as e:
         st.error(f"Error fetching keywords")
@@ -194,7 +200,7 @@ def fetch_interventions_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.Da
     """
     if not nct_ids:
         return pd.DataFrame()
-    
+    import time
     try:
         query = text("""
         SELECT nct_id, intervention_type, name
@@ -202,8 +208,11 @@ def fetch_interventions_for_trials(_engine: Engine, nct_ids: List[str]) -> pd.Da
         WHERE nct_id IN :nct_ids
         ORDER BY nct_id;
         """)
-        
+        logging.info("Starting DB read: fetch_interventions_for_trials")
+        t0 = time.time()
         df = pd.read_sql_query(query, _engine, params={"nct_ids": tuple(nct_ids)})
+        t1 = time.time()
+        logging.info(f"Finished DB read: fetch_interventions_for_trials in {t1-t0:.2f} seconds")
         return df
     except SQLAlchemyError as e:
         st.error(f"Error fetching interventions")
@@ -219,6 +228,7 @@ def fetch_facilities_for_trials(_engine: Engine,
     """
     Unified function to fetch facilities data with various filtering options.
     """
+    import time
     try:
         # Start with a base query
         base_query = """
@@ -247,20 +257,16 @@ def fetch_facilities_for_trials(_engine: Engine,
         # Complete the query
         base_query += " ORDER BY s.nct_id, f.city"
         query = text(base_query)
-        
-        # Execute the query
+        logging.info("Starting DB read: fetch_facilities_for_trials")
+        t0 = time.time()
         df = pd.read_sql_query(query, _engine, params=params)
+        t1 = time.time()
+        logging.info(f"Finished DB read: fetch_facilities_for_trials in {t1-t0:.2f} seconds")
         
-        # If pediatric only and we have a list of pediatric trial IDs, filter after query
+        # If pediatric_only and nct_ids is provided, we already filtered for pediatric trials in the nct_ids list
         if pediatric_only and nct_ids:
-            # We already filtered for pediatric trials in the nct_ids list
             return df
-        elif pediatric_only:
-            # Get the list of pediatric trial IDs and filter the facilities
-            pediatric_trials = fetch_pediatric_trials_in_canada(_engine)
-            pediatric_nct_ids = set(pediatric_trials['nct_id'].tolist())
-            df = df[df['nct_id'].isin(pediatric_nct_ids)]
-            
+        # If pediatric_only is True but nct_ids is not provided, just return the full DataFrame (no additional filtering)
         return df
     except SQLAlchemyError as e:
         st.error(f"Error fetching facilities data")

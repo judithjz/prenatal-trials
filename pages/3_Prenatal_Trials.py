@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from datetime import date
 import plotly.graph_objects as go
 import logging
+import time
 
 # Import utility modules
 from utils.database_utils import (
@@ -70,87 +72,52 @@ def main():
             return
         
         prenatal_df = adult_trials.copy()
+        st.info(f"Found {len(prenatal_df)} trials from all clinical trials")
+        prenatal_df = prenatal_df[prenatal_df['is_prenatal'] == True].copy()
         # TODO: Update the text to show both original DF and then filtered DF counts
-        st.info(f"Found {len(prenatal_df)} trials for adult populations.")
+        st.info(f"Found {len(prenatal_df)} pre-natal trials.")
         
         # Load trial data for these NCT IDs
         prenatal_nct_ids = prenatal_df['nct_id'].tolist()
         
-        # Fetch trial data from database
-        logging.info('Loading trial data from DB')
-        with st.spinner("Loading trial data from database..."):
-            # Query to get the trial data for the prenatal disease trials
-            # TODO: Adjust the keywords to do more than just pregnan
-            # Rewrite query to use named parameters
-             #   e.criteria,
-            query = """
-            SELECT DISTINCT 
-                s.nct_id,
-                s.brief_title,
-                s.official_title,
-                s.overall_status,
-                e.minimum_age,
-                s.study_type,
-                s.start_date,
-                e.criteria,
-                e.gender,
-                bs.description AS brief_summary,
-                dd.description AS detailed_description,
-                COUNT(DISTINCT f.id) AS num_canadian_sites
-            FROM ctgov.studies s
-            JOIN ctgov.facilities f ON s.nct_id = f.nct_id
-            JOIN ctgov.eligibilities e ON s.nct_id = e.nct_id
-            LEFT JOIN ctgov.brief_summaries bs ON s.nct_id = bs.nct_id
-            LEFT JOIN ctgov.detailed_descriptions dd ON s.nct_id = dd.nct_id
-            WHERE s.nct_id IN :ids
-              AND position('pregnan' IN LOWER(e.criteria)) > 0
-            GROUP BY s.nct_id, s.brief_title, s.official_title, s.overall_status,
-                     e.minimum_age, s.study_type, s.start_date,
-                     bs.description, dd.description, e.criteria, e.gender
-            ORDER BY s.start_date DESC;
-            """
-           
-            # Pass parameters as a dictionary
-            params = {"ids": tuple(prenatal_nct_ids)}
-           
-            # Execute the query
-            try:
-                import sqlalchemy
-                logging.info('running query %s', query)
-                prenatal_trials_data = pd.read_sql_query(sqlalchemy.text(query), conn, params=params)
-                logging.info('finished query - got %d rows', len(prenatal_trials_data))
-                st.info(f"Found {len(prenatal_trials_data)} trials for prenatal populations.")
-
-                # Add year information
-                if not prenatal_trials_data.empty and 'start_date' in prenatal_trials_data.columns:
-                    prenatal_trials_data['start_year'] = pd.to_datetime(prenatal_trials_data['start_date'], errors='coerce').dt.year
-                
-                set_session_state('prenatal_trials_data', prenatal_trials_data)
-            except Exception as e:
-                st.error(f"Error fetching trial data: {e}")
-                return
+        prenatal_trials_data = prenatal_df.copy()
+        st.info(f"Found {len(prenatal_trials_data)} trials for prenatal populations.")
+        set_session_state('prenatal_trials_data', prenatal_trials_data)
         
         # Load filters
         if safe_get_session_state('prenatal_trials_filters') is None:
             # Fetch additional data needed for filtering
             with st.spinner("Loading additional data for filtering..."):
+                import time
                 # Fetch conditions for trials
+                logging.info("Starting DB read: fetch_conditions_for_trials")
+                t0 = time.time()
                 conditions_df = fetch_conditions_for_trials(conn, prenatal_nct_ids)
+                t1 = time.time()
+                logging.info(f"Finished DB read: fetch_conditions_for_trials in {t1-t0:.2f} seconds")
                 if not conditions_df.empty:
                     conditions_dict = build_conditions_dict(conditions_df)
                 else:
                     conditions_dict = {}
-                
+
                 # Fetch keywords for trials
+                logging.info("Starting DB read: fetch_keywords_for_trials")
+                t0 = time.time()
                 keywords_df = fetch_keywords_for_trials(conn, prenatal_nct_ids)
+                t1 = time.time()
+                logging.info(f"Finished DB read: fetch_keywords_for_trials in {t1-t0:.2f} seconds")
                 if not keywords_df.empty:
                     keywords_dict = build_keywords_dict(keywords_df)
                 else:
                     keywords_dict = {}
-                
+
                 # Fetch interventions for trials
+                logging.info("Starting DB read: fetch_interventions_for_trials")
+                t0 = time.time()
                 interventions_df = fetch_interventions_for_trials(conn, prenatal_nct_ids)
-                
+                t1 = time.time()
+                logging.info(f"Finished DB read: fetch_interventions_for_trials in {t1-t0:.2f} seconds")
+
                 set_session_state('prenatal_conditions_dict', conditions_dict)
                 set_session_state('prenatal_keywords_dict', keywords_dict)
                 set_session_state('prenatal_interventions_df', interventions_df)
@@ -170,30 +137,31 @@ def main():
                 options=status_options,
                 default=[]
             )
-            
-            # Year filter
-            year_options = prenatal_trials_data['start_year'].dropna().astype(int).unique().tolist()
-            if year_options:
-                year_filter = st.sidebar.slider(
-                    "Start Year Range:",
-                    min_value=min(year_options),
-                    max_value=max(year_options),
-                    value=(min(year_options), max(year_options))
-                )
-            else:
-                year_filter = None
-           
-            gender_options = prenatal_trials_data['gender'].dropna().astype(str).unique().tolist()
+
+            # Date range filter
+            date_filter = st.sidebar.date_input(
+            "Study Start Date Rage",
+            [date(2000,1,1), date(2025,12,31)]
+            )
+
+            # Gender filter
             gender_filter = st.sidebar.selectbox(
                 "Gender Eligibility:",
-                options=["ALL", "MALE", "FEMALE"],  
+                options=["ALL", "MALE", "FEMALE"],
+                index=0,
+            )
+
+            # Age filter
+            age_filter = st.sidebar.selectbox(
+                "Age Range:",
+                options=["ALL", "PEDIATRIC", "ADULT"],
                 index=0,
             )
 
             # Keyword and condition search
             keyword_filter = st.sidebar.text_input("Keyword Search:", "")
             keyword_filter = keyword_filter.strip() if keyword_filter else None
-            
+
             condition_filter = st.sidebar.text_input("Condition Search:", "")
             condition_filter = condition_filter.strip() if condition_filter else None
             
@@ -201,8 +169,9 @@ def main():
             filtered_df = filter_trials_by_criteria(
                 prenatal_trials_data,
                 status_filter=status_filter,
-                year_filter=year_filter,
+                date_filter=date_filter,
                 gender_filter=gender_filter,
+                age_filter=age_filter,
                 keyword_filter=keyword_filter,
                 condition_filter=condition_filter,
                 conditions_dict=safe_get_session_state('prenatal_conditions_dict', {}),
@@ -230,59 +199,69 @@ def main():
                     "Trial Details"
                 ])
                 
-                with tab1:
-                    _ShowTrials(filtered_df)
-                
-                with tab2:
-                    _ShowVisualizations(filtered_df)
- 
-                with tab3:
-                    _ShowGeographicDistribution(filtered_df, conn)
-
-                with tab4:
-                    _ShowInterventions(filtered_df, conn)
-                
-                with tab5:
-                    _ShowTrialDetails(filtered_df, prenatal_df)
+                tabs = [tab1, tab2, tab3, tab4, tab5]
+                for i, tab in enumerate(tabs):
+                    with tab:
+                        if i == 0:
+                            _ShowTrials(filtered_df)
+                        elif i == 1:
+                            _ShowVisualizations(filtered_df)
+                        elif i == 2:
+                            _ShowGeographicDistribution(filtered_df, conn)
+                        elif i == 3:
+                            _ShowInterventions(filtered_df, conn)
+                        elif i == 4:
+                            _ShowTrialDetails(filtered_df, prenatal_df)
 
 
 def _ShowTrials(filtered_df):
+    import time
     st.subheader("Prenatal Clinical Trials")
     # Display trials in a dataframe
+    # Instrumentation for dataframe and download link
     display_cols = ['nct_id', 'brief_title', 'overall_status', 'minimum_age', 'start_date', 'num_canadian_sites']
+    t0 = time.time()
     st.dataframe(filtered_df[display_cols], use_container_width=True)
-   
-    # Download button
+    t1 = time.time()
+    logging.info(f"st.dataframe in _ShowTrials took {t1-t0:.2f} seconds")
+    t0 = time.time()
     st.markdown(get_download_link(filtered_df, filename="prenatal_disease_trials.csv"), unsafe_allow_html=True)
+    t1 = time.time()
+    logging.info(f"get_download_link in _ShowTrials took {t1-t0:.2f} seconds")
 
 
 def _ShowGeographicDistribution(filtered_df, conn):
 
     st.subheader("Geographic Distribution")
-    # Use the centralized visualization function for geographic distribution
+    # Instrumentation for geographic visualizations
+    t0 = time.time()
     render_city_visualization(filtered_df, conn)
-    # Add province distribution visualization
+    t1 = time.time()
+    logging.info(f"render_city_visualization in _ShowGeographicDistribution took {t1-t0:.2f} seconds")
+    t0 = time.time()
     render_province_visualization(filtered_df, conn, title_prefix="Rare Disease")
+    t1 = time.time()
+    logging.info(f"render_province_visualization in _ShowGeographicDistribution took {t1-t0:.2f} seconds")
 
 
 def _ShowInterventions(filtered_df, conn):
                 
+    st.subheader("Interventions & Conditions")
     # Use the centralized visualization function for interventions and conditions analysis
     filtered_nct_ids = filtered_df['nct_id'].tolist()
     conditions_dict = safe_get_session_state('prenatal_conditions_dict', {})
     interventions_df = safe_get_session_state('prenatal_interventions_df')
-   
     # Filter to only include the trials from filtered_df
     filtered_conditions_dict = {
         nct_id: conditions 
         for nct_id, conditions in conditions_dict.items() 
         if nct_id in filtered_nct_ids
     }
-   
     filtered_interventions_df = None
     if interventions_df is not None and not interventions_df.empty:
         filtered_interventions_df = interventions_df[interventions_df['nct_id'].isin(filtered_nct_ids)]
-   
+    import time
+    t0 = time.time()
     render_interventions_conditions_analysis(
         filtered_df,
         conn,
@@ -290,41 +269,50 @@ def _ShowInterventions(filtered_df, conn):
         conditions_dict=filtered_conditions_dict,
         interventions_df=filtered_interventions_df
     )
+    t1 = time.time()
+    logging.info(f"render_interventions_conditions_analysis in _ShowInterventions took {t1-t0:.2f} seconds")
 
 
 def _ShowVisualizations(filtered_df):
 
     st.subheader("Data Visualizations")
-    
     # Visualization 1: Trials by Status
+    # Instrumentation for status chart
+    t0 = time.time()
     st.write("### Trials by Status")
     fig_status = plot_status_distribution(filtered_df)
     st.plotly_chart(fig_status, use_container_width=True)
+    t1 = time.time()
+    logging.info(f"plot_status_distribution in _ShowVisualizations took {t1-t0:.2f} seconds")
     
     # Visualization 2: Trials by Year
     if 'start_year' in filtered_df.columns and not filtered_df['start_year'].isna().all():
+        t0 = time.time()
         st.write("### Trials by Year")
         fig_year, fig_area = plot_yearly_trends(filtered_df)
         if fig_year and fig_area:
             st.plotly_chart(fig_year, use_container_width=True)
             st.plotly_chart(fig_area, use_container_width=True)
+        t1 = time.time()
+        logging.info(f"plot_yearly_trends in _ShowVisualizations took {t1-t0:.2f} seconds")
 
 
 def _ShowTrialDetails(filtered_df, prenatal_df):
   
     st.subheader("Trial Details")
-    
-    # Select a trial to show details
+    # Instrumentation for selectbox and details rendering
+    t0 = time.time()
     selected_trial = st.selectbox(
         "Select a trial to view details:",
         options=filtered_df['nct_id'].tolist(),
         format_func=lambda nct_id: f"{nct_id} - {filtered_df[filtered_df['nct_id'] == nct_id]['brief_title'].iloc[0][:50]}..."
     )
-    
+    t1 = time.time()
+    logging.info(f"st.selectbox in _ShowTrialDetails took {t1-t0:.2f} seconds")
     if selected_trial:
+        t0 = time.time()
         st.write("### Trial Details")
         trial_data = filtered_df[filtered_df['nct_id'] == selected_trial].iloc[0]
-        
         st.write(f"**NCT ID:** {selected_trial}")
         st.write(f"**Title:** {trial_data['brief_title']}")
         if pd.notna(trial_data['official_title']):
@@ -383,9 +371,10 @@ def _ShowTrialDetails(filtered_df, prenatal_df):
         
         # Link to ClinicalTrials.gov
         st.markdown(f"[View on ClinicalTrials.gov](https://clinicaltrials.gov/study/{selected_trial})")
-
+        t1 = time.time()
+        logging.info(f"_ShowTrialDetails inner block took {t1-t0:.2f} seconds")
    
 
 if __name__ == "__main__":
     main()
-    
+
