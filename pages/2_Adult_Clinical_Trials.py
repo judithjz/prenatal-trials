@@ -280,8 +280,8 @@ def main():
                 display_cols = ['nct_id', 'brief_title', 'minimum_age', 'maximum_age', 'start_date', 'num_canadian_sites', 'gender']
                 st.dataframe(filtered_df[display_cols], use_container_width=True)
                 
-                # Download button for the results
-                st.markdown(get_download_link(filtered_df[display_cols]), unsafe_allow_html=True)
+                # Download button for the results (all columns)
+                st.markdown(get_download_link(filtered_df), unsafe_allow_html=True)
 
             with tab2:
                 st.subheader("Data Visualizations")
