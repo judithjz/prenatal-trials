@@ -230,10 +230,11 @@ def main():
         index=0,
     )
 
-    age_filter = st.sidebar.selectbox(
-      "Age Range:",
-      options=["ALL", "PEDIATRIC", "ADULT"],
-      index=0,
+    age_filter = st.sidebar.slider(
+        "Age Range:",
+        min_value=0,
+        max_value=99,
+        value=(0, 99)
     )
     
     keyword_filter = st.sidebar.text_input("Keyword Search:", "")
@@ -255,7 +256,7 @@ def main():
             condition_filter=condition_filter,
             conditions_dict=safe_get_session_state('adult_conditions_dict', {}),
             keywords_dict=safe_get_session_state('adult_keywords_dict', {}),
-            )
+        )
         
         # Display results
         if filtered_df.empty:

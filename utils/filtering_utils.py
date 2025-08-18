@@ -28,7 +28,7 @@ def filter_trials_by_criteria(df: pd.DataFrame,
         keyword_filter: Keyword to search for in trial titles, descriptions, and keywords
         condition_filter: Condition to search for in trial conditions
         gender_filter: All, Male, Female
-        age_filter: All, < 18, 18+
+        age_filter: Tuple of age range.
         type_filter: Interventional, Observational, Expanded access
         conditions_dict: Dictionary mapping NCT IDs to lists of conditions
         keywords_dict: Dictionary mapping NCT IDs to lists of keywords
@@ -61,11 +61,23 @@ def filter_trials_by_criteria(df: pd.DataFrame,
             filtered_df = filtered_df[(filtered_df['start_date'] >= min_date) & 
                                      (filtered_df['start_date'] <= max_date)]
 
-    if age_filter:
-      if age_filter == 'PEDIATRIC':
-          filtered_df = filtered_df[filtered_df['max_age_in_months'] < 216]
-      elif age_filter == 'ADULT':
-          filtered_df = filtered_df[filtered_df['min_age_in_months'] >= 216]
+    if age_filter and isinstance(age_filter, tuple) and len(age_filter) == 2:
+        # Convert age_filter years to months
+        min_years, max_years = age_filter
+        min_months = min_years * 12
+        max_months = max_years * 12
+        # If any overlap between trial's age range and filter range, include
+        def age_overlap(row):
+            trial_min = row.get('min_age_in_months', 0)
+            trial_max = row.get('max_age_in_months', 99*12)
+            # Handle missing values
+            if pd.isna(trial_min):
+                trial_min = 0
+            if pd.isna(trial_max):
+                trial_max = 99*12
+            # Overlap if trial_min <= max_months and trial_max >= min_months
+            return (trial_min <= max_months) and (trial_max >= min_months)
+        filtered_df = filtered_df[filtered_df.apply(age_overlap, axis=1)]
   
     if gender_filter:
         filtered_df = filtered_df[filtered_df['gender'] == gender_filter]
