@@ -107,6 +107,8 @@ def fetch_adult_trials_in_canada(engine):
         df['min_age_in_months'] = df['minimum_age'].apply(parse_age_to_months)
         df['max_age_in_months'] = df['maximum_age'].apply(parse_age_to_months)
 
+        df['gender'] = df['gender'].fillna('ALL')
+
         # Filter out any studies that are have a min age of 65 years or where
         # min age is undefined
         adult_df = df[(df['min_age_in_months'].isna()) | (df['min_age_in_months'] <= 780)].copy()
